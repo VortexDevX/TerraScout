@@ -1,0 +1,75 @@
+# ===========================
+# Hyperparameter Configurations
+# ===========================
+
+# Preset configurations for different scenarios
+
+# Conservative: Stable but slow learning
+conservative:
+  learning_rate: 0.0001
+  n_steps: 4096
+  batch_size: 32
+  n_epochs: 5
+  clip_range: 0.1
+  ent_coef: 0.001
+  gamma: 0.995
+  gae_lambda: 0.98
+
+# Balanced: Good default for most cases
+balanced:
+  learning_rate: 0.0003
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 10
+  clip_range: 0.2
+  ent_coef: 0.01
+  gamma: 0.99
+  gae_lambda: 0.95
+
+# Aggressive: Fast learning, less stable
+aggressive:
+  learning_rate: 0.001
+  n_steps: 1024
+  batch_size: 128
+  n_epochs: 20
+  clip_range: 0.3
+  ent_coef: 0.05
+  gamma: 0.98
+  gae_lambda: 0.9
+
+# Exploration focused: For sparse reward environments
+exploration:
+  learning_rate: 0.0003
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 10
+  clip_range: 0.2
+  ent_coef: 0.1 # High entropy for exploration
+  gamma: 0.999 # Long-term focus
+  gae_lambda: 0.95
+
+# Fine-tuning: For refining trained models
+finetune:
+  learning_rate: 0.00003 # 10x smaller
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 5 # Fewer epochs
+  clip_range: 0.1 # Smaller updates
+  ent_coef: 0.001 # Less exploration
+  gamma: 0.99
+  gae_lambda: 0.95
+
+# Kaggle optimized: For 12-hour sessions
+kaggle:
+  learning_rate: 0.0003
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 10
+  clip_range: 0.2
+  ent_coef: 0.01
+  gamma: 0.99
+  gae_lambda: 0.95
+  # With Kaggle-specific settings
+  total_timesteps: 500000
+  eval_freq: 25000
+  save_freq: 50000

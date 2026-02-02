@@ -1,0 +1,28 @@
+# Checkpoints (large files)
+checkpoints/*.zip
+checkpoints/*.pt
+checkpoints/*.pth
+!checkpoints/.gitkeep
+
+# Logs
+logs/
+*.log
+events.out.tfevents.*
+
+# Experiments
+experiments/*/
+!experiments/.gitkeep
+
+# Notebooks
+notebooks/.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data
+*.csv
+*.json
+!configs/*.yaml
+
+# Videos
+videos/
+*.mp4
+*.avi

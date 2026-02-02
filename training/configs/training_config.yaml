@@ -1,0 +1,68 @@
+# ===========================
+# Training Configuration
+# ===========================
+
+# Environment
+environment:
+  name: "MineRLObtainDiamond-v0"
+  max_episode_steps: 18000
+  seed: 42
+
+# Algorithm
+algorithm:
+  name: "PPO"
+  policy: "CnnPolicy"
+  device: "auto"
+
+# Hyperparameters
+hyperparameters:
+  # Learning
+  learning_rate: 0.0003
+  lr_schedule: "constant"
+
+  # PPO specific
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+
+  # Advantage
+  normalize_advantage: true
+
+# Training loop
+training:
+  total_timesteps: 1000000
+
+  # Evaluation
+  eval_freq: 10000
+  n_eval_episodes: 5
+
+  # Saving
+  save_freq: 50000
+  checkpoint_dir: "training/checkpoints"
+  save_best_only: false
+
+  # Logging
+  log_interval: 1
+  verbose: 1
+
+  # Early stopping
+  early_stopping:
+    enabled: false
+    patience: 10
+    min_improvement: 0.01
+
+# Logging
+logging:
+  tensorboard: true
+  log_dir: "training/logs"
+  experiment_name: "terra_scout_v1"
+
+# Reproducibility
+seed: 42
+deterministic: false

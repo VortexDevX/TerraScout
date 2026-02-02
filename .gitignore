@@ -1,0 +1,165 @@
+# ===========================
+# Python
+# ===========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ===========================
+# Virtual Environments
+# ===========================
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+conda-env/
+
+# ===========================
+# IDE / Editors
+# ===========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# ===========================
+# Jupyter Notebooks
+# ===========================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ===========================
+# ML / Training Artifacts
+# ===========================
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.joblib
+*.model
+*.weights
+checkpoints/
+models/*.pt
+models/*.pth
+!models/.gitkeep
+
+# ===========================
+# Training Logs
+# ===========================
+logs/
+*.log
+tensorboard/
+runs/
+wandb/
+mlruns/
+
+# ===========================
+# MineRL Specific
+# ===========================
+MineRLEnv/
+.minecraft/
+*.jar
+minerl_data/
+
+# ===========================
+# Data Files
+# ===========================
+*.csv
+*.json
+!configs/*.json
+*.xml
+*.sql
+*.sqlite
+*.db
+data/
+
+# ===========================
+# OS Generated
+# ===========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ===========================
+# Environment Variables
+# ===========================
+.env
+.env.local
+.env.*.local
+*.env
+
+# ===========================
+# Testing
+# ===========================
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ===========================
+# Distribution / Packaging
+# ===========================
+.Python
+*.manifest
+*.spec
+
+# ===========================
+# Temporary Files
+# ===========================
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# ===========================
+# Secrets (NEVER COMMIT)
+# ===========================
+secrets/
+*.pem
+*.key
+*credentials*
+*secret*

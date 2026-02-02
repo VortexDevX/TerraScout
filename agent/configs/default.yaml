@@ -1,0 +1,159 @@
+# ===========================
+# Terra Scout Agent Configuration
+# ===========================
+
+# Agent metadata
+agent:
+  name: "TerraScout"
+  version: "0.1.0"
+  description: "Autonomous diamond exploration agent"
+
+# Environment configuration
+environment:
+  name: "MineRLObtainDiamond-v0"
+  max_episode_steps: 18000 # ~15 minutes at 20 TPS
+
+  # Observation processing
+  observation:
+    resize: [64, 64]
+    grayscale: false
+    frame_stack: 4
+    normalize: true
+
+  # Action space
+  action:
+    simplified: true # Use simplified action space
+    camera_discretization: 15 # Degrees per camera action
+
+# Model architecture
+model:
+  # Feature extractor (CNN)
+  feature_extractor:
+    type: "NatureCNN"
+    channels: [32, 64, 64]
+    kernel_sizes: [8, 4, 3]
+    strides: [4, 2, 1]
+    activation: "relu"
+    output_dim: 512
+
+  # Policy network (Actor)
+  policy_net:
+    hidden_sizes: [256]
+    activation: "relu"
+
+  # Value network (Critic)
+  value_net:
+    hidden_sizes: [256]
+    activation: "relu"
+
+  # Shared settings
+  ortho_init: true
+  init_gain: 1.0
+
+# Reward configuration
+reward:
+  # Terminal rewards
+  diamond_found: 1000.0
+  agent_death: -100.0
+  timeout: -10.0
+
+  # Progress rewards
+  y_level_decrease: 0.1
+  new_area_explored: 0.05
+  ore_discovered: 1.0
+
+  # Penalties
+  step_penalty: -0.001
+  stuck_penalty: -0.1
+  damage_penalty: -1.0
+
+  # Ore-specific rewards
+  ore_rewards:
+    diamond_ore: 50.0
+    redstone_ore: 3.0
+    lapis_ore: 2.5
+    iron_ore: 1.0
+    gold_ore: 1.5
+
+  # Reward shaping
+  shaping:
+    enabled: true
+    schedule: "linear_decay"
+    start_episode: 0
+    end_episode: 150000
+
+  # Normalization
+  normalize: true
+  clip: 10.0
+
+# Algorithm settings (PPO)
+algorithm:
+  name: "PPO"
+
+  # Core hyperparameters
+  learning_rate: 0.0003
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+
+  # PPO specific
+  clip_range: 0.2
+  clip_range_vf: null # No value function clipping
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+
+  # Learning rate schedule
+  lr_schedule: "constant" # constant, linear, cosine
+
+  # Advantage normalization
+  normalize_advantage: true
+
+# Training settings
+training:
+  total_timesteps: 1000000
+  seed: 42
+  device: "auto" # auto, cuda, cpu
+
+  # Evaluation
+  eval_freq: 10000
+  n_eval_episodes: 5
+
+  # Checkpointing
+  save_freq: 50000
+  save_path: "training/checkpoints"
+  save_best: true
+  save_last: true
+
+  # Early stopping
+  early_stopping:
+    enabled: false
+    patience: 10
+    min_delta: 0.01
+
+# Logging settings
+logging:
+  log_dir: "training/logs"
+  tensorboard: true
+  console: true
+  file: true
+  verbose: 1 # 0=none, 1=info, 2=debug
+
+  # Metrics to log
+  metrics:
+    - episode_reward
+    - episode_length
+    - diamond_found
+    - survival
+    - policy_loss
+    - value_loss
+    - entropy
+
+# Debug settings
+debug:
+  render: false
+  record_video: false
+  video_freq: 100000
+  profile: false

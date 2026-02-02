@@ -1,6 +1,6 @@
 """
 Terra Scout Gymnasium Environment
-Wraps the Mineflayer bot as a Gymnasium environment
+Enhanced version with better observations and rewards
 """
 
 from typing import Any, Dict, Optional, Tuple, Union
@@ -10,6 +10,8 @@ import numpy as np
 from gymnasium import spaces
 
 from .client import BridgeClient
+from .observations import ObservationProcessor
+from .rewards import RewardCalculator
 
 
 class TerraScoutEnv(gym.Env):
@@ -20,12 +22,32 @@ class TerraScoutEnv(gym.Env):
     
     metadata = {"render_modes": ["human"]}
     
+    # Action definitions
+    ACTION_NAMES = [
+        "noop",          # 0
+        "forward",       # 1
+        "back",          # 2
+        "left",          # 3
+        "right",         # 4
+        "jump",          # 5
+        "forward_jump",  # 6
+        "dig",           # 7
+        "dig_down",      # 8
+        "look_up",       # 9
+        "look_down",     # 10
+        "look_left",     # 11
+        "look_right",    # 12
+        "sprint_forward",# 13
+    ]
+    
     def __init__(
         self,
         host: str = "localhost",
         port: int = 3000,
         max_steps: int = 18000,
-        render_mode: Optional[str] = None
+        render_mode: Optional[str] = None,
+        use_enhanced_obs: bool = True,
+        use_enhanced_rewards: bool = True,
     ):
         super().__init__()
         
@@ -34,63 +56,72 @@ class TerraScoutEnv(gym.Env):
         self.render_mode = render_mode
         self.current_step = 0
         
-        # Action space: discrete actions
-        # 0: noop, 1: forward, 2: back, 3: left, 4: right, 
-        # 5: jump, 6: forward_jump, 7: dig, 8: look_up, 
-        # 9: look_down, 10: look_left, 11: look_right
-        self.action_space = spaces.Discrete(12)
+        # Enhanced processing
+        self.use_enhanced_obs = use_enhanced_obs
+        self.use_enhanced_rewards = use_enhanced_rewards
+        self.obs_processor = ObservationProcessor() if use_enhanced_obs else None
+        self.reward_calculator = RewardCalculator() if use_enhanced_rewards else None
+        
+        self.prev_raw_obs = None
+        
+        # Action space
+        self.action_space = spaces.Discrete(len(self.ACTION_NAMES))
         
         # Observation space
-        self.observation_space = spaces.Dict({
-            "position": spaces.Box(low=-1e6, high=1e6, shape=(3,), dtype=np.float32),
-            "health": spaces.Box(low=0, high=20, shape=(1,), dtype=np.float32),
-            "food": spaces.Box(low=0, high=20, shape=(1,), dtype=np.float32),
-            "yaw": spaces.Box(low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32),
-            "pitch": spaces.Box(low=-np.pi/2, high=np.pi/2, shape=(1,), dtype=np.float32),
-        })
+        if use_enhanced_obs:
+            self.observation_space = spaces.Box(
+                low=-np.inf, 
+                high=np.inf, 
+                shape=(35,),  # Flattened observation size
+                dtype=np.float32
+            )
+        else:
+            self.observation_space = spaces.Dict({
+                "position": spaces.Box(low=-1e6, high=1e6, shape=(3,), dtype=np.float32),
+                "health": spaces.Box(low=0, high=20, shape=(1,), dtype=np.float32),
+                "food": spaces.Box(low=0, high=20, shape=(1,), dtype=np.float32),
+                "yaw": spaces.Box(low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32),
+                "pitch": spaces.Box(low=-np.pi/2, high=np.pi/2, shape=(1,), dtype=np.float32),
+            })
         
         # Action mapping
         self.action_map = {
             0: {"type": "noop"},
-            1: {"type": "move", "direction": "forward", "duration": 1},
-            2: {"type": "move", "direction": "back", "duration": 1},
-            3: {"type": "move", "direction": "left", "duration": 1},
-            4: {"type": "move", "direction": "right", "duration": 1},
+            1: {"type": "move", "direction": "forward", "duration": 2},
+            2: {"type": "move", "direction": "back", "duration": 2},
+            3: {"type": "move", "direction": "left", "duration": 2},
+            4: {"type": "move", "direction": "right", "duration": 2},
             5: {"type": "jump"},
             6: {"type": "forward_jump"},
             7: {"type": "dig"},
-            8: {"type": "look", "pitch": -0.2, "yaw": 0},
-            9: {"type": "look", "pitch": 0.2, "yaw": 0},
-            10: {"type": "look", "pitch": 0, "yaw": -0.3},
-            11: {"type": "look", "pitch": 0, "yaw": 0.3},
+            8: {"type": "dig_down"},
+            9: {"type": "look", "pitch": -0.3, "yaw": 0},
+            10: {"type": "look", "pitch": 0.3, "yaw": 0},
+            11: {"type": "look", "pitch": 0, "yaw": -0.4},
+            12: {"type": "look", "pitch": 0, "yaw": 0.4},
+            13: {"type": "sprint_forward"},
         }
     
-    def _process_observation(self, raw_obs: Dict[str, Any]) -> Dict[str, np.ndarray]:
-        """Convert raw observation to gymnasium format."""
+    def _process_observation(self, raw_obs: Dict[str, Any]) -> np.ndarray:
+        """Convert raw observation to numpy array."""
         if raw_obs is None:
-            return self._empty_observation()
-            
-        return {
-            "position": np.array([
-                raw_obs["position"]["x"],
-                raw_obs["position"]["y"],
-                raw_obs["position"]["z"]
-            ], dtype=np.float32),
-            "health": np.array([raw_obs["health"]], dtype=np.float32),
-            "food": np.array([raw_obs["food"]], dtype=np.float32),
-            "yaw": np.array([raw_obs["yaw"]], dtype=np.float32),
-            "pitch": np.array([raw_obs["pitch"]], dtype=np.float32),
-        }
+            return np.zeros(35, dtype=np.float32)
+        
+        if self.use_enhanced_obs and self.obs_processor:
+            return self.obs_processor.get_flat_observation(raw_obs)
+        else:
+            return self._simple_observation(raw_obs)
     
-    def _empty_observation(self) -> Dict[str, np.ndarray]:
-        """Return empty observation."""
-        return {
-            "position": np.zeros(3, dtype=np.float32),
-            "health": np.array([20.0], dtype=np.float32),
-            "food": np.array([20.0], dtype=np.float32),
-            "yaw": np.array([0.0], dtype=np.float32),
-            "pitch": np.array([0.0], dtype=np.float32),
-        }
+    def _simple_observation(self, raw_obs: Dict[str, Any]) -> np.ndarray:
+        """Simple observation processing."""
+        pos = raw_obs.get("position", {"x": 0, "y": 64, "z": 0})
+        return np.array([
+            pos["x"] / 1000.0,
+            pos["y"] / 320.0,
+            pos["z"] / 1000.0,
+            raw_obs.get("health", 20) / 20.0,
+            raw_obs.get("food", 20) / 20.0,
+        ] + [0.0] * 30, dtype=np.float32)  # Pad to 35
     
     def _convert_action(self, action: Union[int, np.ndarray, np.integer]) -> int:
         """Convert action to integer."""
@@ -101,29 +132,41 @@ class TerraScoutEnv(gym.Env):
         else:
             return int(action)
     
-    def reset(  # type: ignore
+    def reset( # type: ignore
         self,
         seed: Optional[int] = None,
         options: Optional[Dict] = None
-    ) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Reset the environment."""
         super().reset(seed=seed)
         
         self.current_step = 0
+        self.prev_raw_obs = None
+        
+        # Reset processors
+        if self.obs_processor:
+            self.obs_processor.reset()
+        if self.reward_calculator:
+            self.reward_calculator.reset()
+        
+        # Reset bot
         result = self.client.reset()
         
         if "error" in result:
-            return self._empty_observation(), {"error": result["error"]}
+            return np.zeros(35, dtype=np.float32), {"error": result["error"]}
         
-        obs = self._process_observation(result.get("observation"))  # type: ignore
-        info = {"raw_observation": result.get("observation")}
+        raw_obs = result.get("observation")
+        self.prev_raw_obs = raw_obs
+        
+        obs = self._process_observation(raw_obs) # type: ignore
+        info = {"raw_observation": raw_obs}
         
         return obs, info
     
     def step(
         self,
         action: Union[int, np.ndarray, np.integer]
-    ) -> Tuple[Dict[str, np.ndarray], float, bool, bool, Dict[str, Any]]:
+    ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """Execute action in environment."""
         self.current_step += 1
         
@@ -137,18 +180,39 @@ class TerraScoutEnv(gym.Env):
         result = self.client.step(action_dict)
         
         if "error" in result:
-            return self._empty_observation(), -1.0, True, False, {"error": result["error"]}
+            return np.zeros(35, dtype=np.float32), -1.0, True, False, {"error": result["error"]}
         
-        obs = self._process_observation(result.get("observation")) # type: ignore
-        reward = result.get("reward", 0.0)
+        raw_obs = result.get("observation")
+        
+        # Calculate reward
+        if self.use_enhanced_rewards and self.reward_calculator:
+            reward, reward_breakdown = self.reward_calculator.calculate(raw_obs, self.prev_raw_obs) # type: ignore
+        else:
+            reward = result.get("reward", 0.0)
+            reward_breakdown = {}
+        
+        self.prev_raw_obs = raw_obs
+        
+        # Process observation
+        obs = self._process_observation(raw_obs) # type: ignore
+        
+        # Check termination
         done = result.get("done", False)
         truncated = self.current_step >= self.max_steps
         
+        # Check for diamond
+        if raw_obs and raw_obs.get("inventory", {}).get("diamond", 0) > 0:
+            done = True
+        
         info = {
-            "raw_observation": result.get("observation"),
-            "step_count": result.get("info", {}).get("stepCount", 0),
-            "total_reward": result.get("info", {}).get("totalReward", 0),
+            "raw_observation": raw_obs,
+            "step_count": self.current_step,
+            "action_name": self.ACTION_NAMES[action_int],
+            "reward_breakdown": reward_breakdown,
         }
+        
+        if self.reward_calculator:
+            info["episode_stats"] = self.reward_calculator.get_stats()
         
         return obs, reward, done, truncated, info
     
@@ -165,4 +229,10 @@ class TerraScoutEnv(gym.Env):
 gym.register(
     id="TerraScout-v0",
     entry_point="agent.src.bridge.environment:TerraScoutEnv",
+)
+
+gym.register(
+    id="TerraScout-v1",
+    entry_point="agent.src.bridge.environment:TerraScoutEnv",
+    kwargs={"use_enhanced_obs": True, "use_enhanced_rewards": True},
 )

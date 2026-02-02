@@ -341,6 +341,12 @@ class TerraScoutBot {
         case "forward_jump":
           await this.actionForwardJump();
           break;
+        case "dig_down":
+          await this.actionDigDown();
+          break;
+        case "sprint_forward":
+          await this.actionSprintForward();
+          break;
         case "noop":
           await this.sleep(50);
           break;
@@ -409,6 +415,30 @@ class TerraScoutBot {
     await this.sleep(200);
     this.bot.setControlState("forward", false);
     this.bot.setControlState("jump", false);
+  }
+
+  async actionDigDown() {
+    try {
+      const pos = this.bot.entity.position;
+      const blockBelow = this.bot.blockAt(pos.offset(0, -1, 0));
+      if (
+        blockBelow &&
+        blockBelow.name !== "air" &&
+        blockBelow.name !== "bedrock"
+      ) {
+        await this.bot.dig(blockBelow);
+      }
+    } catch (err) {
+      // Digging might fail, that's ok
+    }
+  }
+
+  async actionSprintForward() {
+    this.bot.setControlState("sprint", true);
+    this.bot.setControlState("forward", true);
+    await this.sleep(300);
+    this.bot.setControlState("forward", false);
+    this.bot.setControlState("sprint", false);
   }
 
   /**

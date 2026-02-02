@@ -56,6 +56,51 @@ cd TerraScout
 # Setup environment (see docs/guides/SETUP_GUIDE.md)
 ```
 
+## 🎮 Running Terra Scout
+
+### Prerequisites
+
+- Minecraft server jar in `server/` (download from [PaperMC](https://papermc.io/downloads/paper))
+
+### Start Everything
+
+**Option 1: Manual (Recommended for development)**
+
+```powershell
+# Terminal 1: Start Minecraft Server
+cd server
+.\start.ps1
+
+# Terminal 2: Start Bot (wait for server to fully start)
+cd bot
+npm start
+
+# Terminal 3: Run Python Agent
+.\venv\Scripts\Activate.ps1
+python scripts/test_training.py
+```
+
+**Option 2: Automatic**
+
+```powershell
+.\scripts\start_all.ps1
+```
+
+### Stop Everything
+
+```powershell
+.\scripts\stop_all.ps1
+```
+
+### Verify Setup
+
+```powershell
+.\venv\Scripts\Activate.ps1
+python scripts/verify_installation.py
+python scripts/test_bridge.py
+python scripts/test_gym_env.py
+```
+
 ## 📚 Documentation
 
 - [Project Scope](docs/PROJECT_SCOPE.md)

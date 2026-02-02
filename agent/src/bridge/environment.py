@@ -3,7 +3,7 @@ Terra Scout Gymnasium Environment
 Wraps the Mineflayer bot as a Gymnasium environment
 """
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 import gymnasium as gym
 import numpy as np
@@ -92,6 +92,15 @@ class TerraScoutEnv(gym.Env):
             "pitch": np.array([0.0], dtype=np.float32),
         }
     
+    def _convert_action(self, action: Union[int, np.ndarray, np.integer]) -> int:
+        """Convert action to integer."""
+        if isinstance(action, np.ndarray):
+            return int(action.item())
+        elif isinstance(action, np.integer):
+            return int(action)
+        else:
+            return int(action)
+    
     def reset(  # type: ignore
         self,
         seed: Optional[int] = None,
@@ -106,20 +115,23 @@ class TerraScoutEnv(gym.Env):
         if "error" in result:
             return self._empty_observation(), {"error": result["error"]}
         
-        obs = self._process_observation(result.get("observation")) # type: ignore
+        obs = self._process_observation(result.get("observation"))  # type: ignore
         info = {"raw_observation": result.get("observation")}
         
         return obs, info
     
     def step(
         self,
-        action: int
+        action: Union[int, np.ndarray, np.integer]
     ) -> Tuple[Dict[str, np.ndarray], float, bool, bool, Dict[str, Any]]:
         """Execute action in environment."""
         self.current_step += 1
         
+        # Convert action to integer
+        action_int = self._convert_action(action)
+        
         # Map action index to action dict
-        action_dict = self.action_map.get(action, {"type": "noop"})
+        action_dict = self.action_map.get(action_int, {"type": "noop"})
         
         # Execute action
         result = self.client.step(action_dict)
@@ -127,7 +139,7 @@ class TerraScoutEnv(gym.Env):
         if "error" in result:
             return self._empty_observation(), -1.0, True, False, {"error": result["error"]}
         
-        obs = self._process_observation(result.get("observation"))  # type: ignore
+        obs = self._process_observation(result.get("observation")) # type: ignore
         reward = result.get("reward", 0.0)
         done = result.get("done", False)
         truncated = self.current_step >= self.max_steps

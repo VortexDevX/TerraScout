@@ -1,4 +1,4 @@
-"""
+﻿"""
 Terra Scout Bridge Module
 Provides communication between Python agent and Mineflayer bot
 """

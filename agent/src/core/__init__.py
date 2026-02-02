@@ -1,0 +1,3 @@
+﻿"""
+Terra Scout Core Module
+"""

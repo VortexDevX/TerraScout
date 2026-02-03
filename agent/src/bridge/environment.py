@@ -1,6 +1,6 @@
 """
 Terra Scout Gymnasium Environment
-Enhanced version with better observations and rewards
+Enhanced with survival and mining actions
 """
 
 from typing import Any, Dict, Optional, Tuple, Union
@@ -17,27 +17,29 @@ from .rewards import RewardCalculator
 class TerraScoutEnv(gym.Env):
     """
     Gymnasium environment for Terra Scout.
-    Communicates with Mineflayer bot via HTTP bridge.
+    Enhanced with survival and smart mining actions.
     """
     
     metadata = {"render_modes": ["human"]}
     
-    # Action definitions
+    # Enhanced action set for survival and mining
     ACTION_NAMES = [
-        "noop",          # 0
-        "forward",       # 1
-        "back",          # 2
-        "left",          # 3
-        "right",         # 4
-        "jump",          # 5
-        "forward_jump",  # 6
-        "dig",           # 7
-        "dig_down",      # 8
-        "look_up",       # 9
-        "look_down",     # 10
-        "look_left",     # 11
-        "look_right",    # 12
-        "sprint_forward",# 13
+        "noop",             # 0: Do nothing
+        "forward",          # 1: Move forward
+        "back",             # 2: Move backward
+        "left",             # 3: Strafe left
+        "right",            # 4: Strafe right
+        "jump",             # 5: Jump
+        "forward_jump",     # 6: Jump forward
+        "tunnel_forward",   # 7: Dig 2-high tunnel forward (KEY ACTION)
+        "safe_dig_down",    # 8: Safely dig down (checks for lava)
+        "dig_forward",      # 9: Dig block in front
+        "mine_ore",         # 10: Mine nearest visible ore
+        "look_down",        # 11: Look down
+        "look_up",          # 12: Look up
+        "look_left",        # 13: Turn left
+        "look_right",       # 14: Turn right
+        "sprint_forward",   # 15: Sprint forward
     ]
     
     def __init__(
@@ -56,7 +58,6 @@ class TerraScoutEnv(gym.Env):
         self.render_mode = render_mode
         self.current_step = 0
         
-        # Enhanced processing
         self.use_enhanced_obs = use_enhanced_obs
         self.use_enhanced_rewards = use_enhanced_rewards
         self.obs_processor = ObservationProcessor() if use_enhanced_obs else None
@@ -67,24 +68,23 @@ class TerraScoutEnv(gym.Env):
         # Action space
         self.action_space = spaces.Discrete(len(self.ACTION_NAMES))
         
-        # Observation space
+        # Observation space (flattened)
         if use_enhanced_obs:
             self.observation_space = spaces.Box(
                 low=-np.inf, 
                 high=np.inf, 
-                shape=(35,),  # Flattened observation size
+                shape=(35,),
                 dtype=np.float32
             )
         else:
-            self.observation_space = spaces.Dict({
-                "position": spaces.Box(low=-1e6, high=1e6, shape=(3,), dtype=np.float32),
-                "health": spaces.Box(low=0, high=20, shape=(1,), dtype=np.float32),
-                "food": spaces.Box(low=0, high=20, shape=(1,), dtype=np.float32),
-                "yaw": spaces.Box(low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32),
-                "pitch": spaces.Box(low=-np.pi/2, high=np.pi/2, shape=(1,), dtype=np.float32),
-            })
+            self.observation_space = spaces.Box(
+                low=-np.inf,
+                high=np.inf,
+                shape=(35,),
+                dtype=np.float32
+            )
         
-        # Action mapping
+        # Action mapping to bot commands
         self.action_map = {
             0: {"type": "noop"},
             1: {"type": "move", "direction": "forward", "duration": 2},
@@ -93,13 +93,15 @@ class TerraScoutEnv(gym.Env):
             4: {"type": "move", "direction": "right", "duration": 2},
             5: {"type": "jump"},
             6: {"type": "forward_jump"},
-            7: {"type": "dig"},
-            8: {"type": "dig_down"},
-            9: {"type": "look", "pitch": -0.3, "yaw": 0},
-            10: {"type": "look", "pitch": 0.3, "yaw": 0},
-            11: {"type": "look", "pitch": 0, "yaw": -0.4},
-            12: {"type": "look", "pitch": 0, "yaw": 0.4},
-            13: {"type": "sprint_forward"},
+            7: {"type": "tunnel_forward"},       # Key mining action
+            8: {"type": "safe_dig_down"},        # Safe downward mining
+            9: {"type": "dig_forward"},
+            10: {"type": "mine_ore"},            # Mine visible ore
+            11: {"type": "look", "pitch": 0.4, "yaw": 0},
+            12: {"type": "look", "pitch": -0.4, "yaw": 0},
+            13: {"type": "look", "pitch": 0, "yaw": -0.5},
+            14: {"type": "look", "pitch": 0, "yaw": 0.5},
+            15: {"type": "sprint_forward"},
         }
     
     def _process_observation(self, raw_obs: Dict[str, Any]) -> np.ndarray:
@@ -121,7 +123,7 @@ class TerraScoutEnv(gym.Env):
             pos["z"] / 1000.0,
             raw_obs.get("health", 20) / 20.0,
             raw_obs.get("food", 20) / 20.0,
-        ] + [0.0] * 30, dtype=np.float32)  # Pad to 35
+        ] + [0.0] * 30, dtype=np.float32)
     
     def _convert_action(self, action: Union[int, np.ndarray, np.integer]) -> int:
         """Convert action to integer."""
@@ -132,7 +134,7 @@ class TerraScoutEnv(gym.Env):
         else:
             return int(action)
     
-    def reset( # type: ignore
+    def reset(
         self,
         seed: Optional[int] = None,
         options: Optional[Dict] = None
@@ -143,13 +145,11 @@ class TerraScoutEnv(gym.Env):
         self.current_step = 0
         self.prev_raw_obs = None
         
-        # Reset processors
         if self.obs_processor:
             self.obs_processor.reset()
         if self.reward_calculator:
             self.reward_calculator.reset()
         
-        # Reset bot
         result = self.client.reset()
         
         if "error" in result:
@@ -158,7 +158,7 @@ class TerraScoutEnv(gym.Env):
         raw_obs = result.get("observation")
         self.prev_raw_obs = raw_obs
         
-        obs = self._process_observation(raw_obs) # type: ignore
+        obs = self._process_observation(raw_obs)
         info = {"raw_observation": raw_obs}
         
         return obs, info
@@ -170,13 +170,9 @@ class TerraScoutEnv(gym.Env):
         """Execute action in environment."""
         self.current_step += 1
         
-        # Convert action to integer
         action_int = self._convert_action(action)
-        
-        # Map action index to action dict
         action_dict = self.action_map.get(action_int, {"type": "noop"})
         
-        # Execute action
         result = self.client.step(action_dict)
         
         if "error" in result:
@@ -186,15 +182,14 @@ class TerraScoutEnv(gym.Env):
         
         # Calculate reward
         if self.use_enhanced_rewards and self.reward_calculator:
-            reward, reward_breakdown = self.reward_calculator.calculate(raw_obs, self.prev_raw_obs) # type: ignore
+            reward, reward_breakdown = self.reward_calculator.calculate(raw_obs, self.prev_raw_obs)
         else:
             reward = result.get("reward", 0.0)
             reward_breakdown = {}
         
         self.prev_raw_obs = raw_obs
         
-        # Process observation
-        obs = self._process_observation(raw_obs) # type: ignore
+        obs = self._process_observation(raw_obs)
         
         # Check termination
         done = result.get("done", False)
@@ -209,6 +204,7 @@ class TerraScoutEnv(gym.Env):
             "step_count": self.current_step,
             "action_name": self.ACTION_NAMES[action_int],
             "reward_breakdown": reward_breakdown,
+            "mined_ores": result.get("info", {}).get("minedOres", 0),
         }
         
         if self.reward_calculator:
@@ -225,7 +221,7 @@ class TerraScoutEnv(gym.Env):
         self.client.close()
 
 
-# Register the environment
+# Register environments
 gym.register(
     id="TerraScout-v0",
     entry_point="agent.src.bridge.environment:TerraScoutEnv",

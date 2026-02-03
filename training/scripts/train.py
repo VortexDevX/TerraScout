@@ -13,6 +13,8 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from training.scripts.metrics import MetricsTracker
+
 import numpy as np
 import torch
 from stable_baselines3 import PPO
@@ -28,9 +30,9 @@ from agent.src.bridge.environment import TerraScoutEnv
 
 
 class TerraScoutCallback(BaseCallback):
-    """Custom callback for Terra Scout training."""
+    """Custom callback with metrics tracking."""
     
-    def __init__(self, verbose=0, log_freq=100):
+    def __init__(self, verbose=0, log_freq=10, metrics_tracker=None):
         super().__init__(verbose)
         self.log_freq = log_freq
         self.episode_rewards = []
@@ -38,12 +40,12 @@ class TerraScoutCallback(BaseCallback):
         self.episode_stats = []
         self.current_episode_reward = 0
         self.current_episode_length = 0
+        self.metrics = metrics_tracker or MetricsTracker()
         
     def _on_step(self) -> bool:
         self.current_episode_reward += self.locals.get('rewards', [0])[0]
         self.current_episode_length += 1
         
-        # Check for episode end
         dones = self.locals.get('dones', [False])
         infos = self.locals.get('infos', [{}])
         
@@ -51,17 +53,25 @@ class TerraScoutCallback(BaseCallback):
             self.episode_rewards.append(self.current_episode_reward)
             self.episode_lengths.append(self.current_episode_length)
             
-            # Get episode stats
-            if 'episode_stats' in infos[0]:
-                self.episode_stats.append(infos[0]['episode_stats'])
+            stats = infos[0].get('episode_stats', {})
+            self.episode_stats.append(stats)
             
-            # Log episode
+            # Log to metrics tracker
             ep_num = len(self.episode_rewards)
+            self.metrics.log_episode(
+                episode=ep_num,
+                reward=self.current_episode_reward,
+                length=self.current_episode_length,
+                lowest_y=stats.get('lowest_y', 64),
+                diamond_zone=stats.get('entered_diamond_zone', False),
+                diamonds_found=1 if self.current_episode_reward > 500 else 0,
+                ores_mined=stats.get('ores_mined', 0),
+                strategy=infos[0].get('strategy', 'unknown'),
+                in_cave=infos[0].get('in_cave', False),
+            )
+            
             if ep_num % self.log_freq == 0 or ep_num <= 10:
                 avg_reward = np.mean(self.episode_rewards[-100:])
-                avg_length = np.mean(self.episode_lengths[-100:])
-                
-                stats = self.episode_stats[-1] if self.episode_stats else {}
                 lowest_y = stats.get('lowest_y', 'N/A')
                 diamond_zone = stats.get('entered_diamond_zone', False)
                 
@@ -69,26 +79,17 @@ class TerraScoutCallback(BaseCallback):
                       f"reward={self.current_episode_reward:.2f}, "
                       f"avg={avg_reward:.2f}, "
                       f"len={self.current_episode_length}, "
-                      f"lowest_y={lowest_y}, "
+                      f"y={lowest_y}, "
                       f"diamond_zone={diamond_zone}")
             
-            # Reset
             self.current_episode_reward = 0
             self.current_episode_length = 0
         
         return True
     
-    def _on_training_end(self) -> None:
-        if self.episode_rewards:
-            print(f"\nTraining Summary:")
-            print(f"  Total episodes: {len(self.episode_rewards)}")
-            print(f"  Average reward: {np.mean(self.episode_rewards):.2f}")
-            print(f"  Best reward: {np.max(self.episode_rewards):.2f}")
-            
-            if self.episode_stats:
-                diamond_entries = sum(1 for s in self.episode_stats if s.get('entered_diamond_zone'))
-                print(f"  Diamond zone entries: {diamond_entries}/{len(self.episode_stats)}")
-
+    def _on_training_end(self):
+        self.metrics.print_summary()
+        self.metrics.save()
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Terra Scout Agent")

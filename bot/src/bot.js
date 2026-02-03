@@ -1,12 +1,10 @@
 /**
  * Terra Scout Mineflayer Bot
- * Fixed: Inventory reset, ore visibility, lava safety
+ * Phase 5: Mining Patterns & Cave Exploration
  */
 
 const mineflayer = require("mineflayer");
 const { pathfinder, Movements, goals } = require("mineflayer-pathfinder");
-const collectBlock = require("mineflayer-collectblock").plugin;
-const autoEat = require("mineflayer-auto-eat").plugin;
 const logger = require("./utils/logger");
 const config = require("./utils/config");
 
@@ -24,9 +22,19 @@ class TerraScoutBot {
     this.minedOres = new Set();
     this.lastPosition = null;
     this.stuckCounter = 0;
-    this.diamondsThisEpisode = 0; // Track diamonds found THIS episode only
+    this.diamondsThisEpisode = 0;
 
-    // Dangerous blocks to avoid
+    // Mining pattern state
+    this.miningDirection = 0; // 0=north, 1=east, 2=south, 3=west
+    this.stripMineLength = 0;
+    this.branchCount = 0;
+    this.currentStrategy = "descend"; // descend, strip_mine, explore_cave
+
+    // Cave detection
+    this.inCave = false;
+    this.caveEntrancePos = null;
+
+    // Dangerous blocks
     this.dangerousBlocks = new Set([
       "lava",
       "flowing_lava",
@@ -37,38 +45,36 @@ class TerraScoutBot {
       "powder_snow",
     ]);
 
-    // Valuable ores to mine
-    this.valuableOres = new Set([
-      "diamond_ore",
-      "deepslate_diamond_ore",
-      "iron_ore",
-      "deepslate_iron_ore",
-      "gold_ore",
-      "deepslate_gold_ore",
-      "redstone_ore",
-      "deepslate_redstone_ore",
-      "lapis_ore",
-      "deepslate_lapis_ore",
-      "emerald_ore",
-      "deepslate_emerald_ore",
-      "coal_ore",
-      "deepslate_coal_ore",
-      "copper_ore",
-      "deepslate_copper_ore",
-    ]);
+    // Valuable ores (priority order)
+    this.oreValues = {
+      diamond_ore: 100,
+      deepslate_diamond_ore: 100,
+      emerald_ore: 50,
+      deepslate_emerald_ore: 50,
+      gold_ore: 20,
+      deepslate_gold_ore: 20,
+      lapis_ore: 15,
+      deepslate_lapis_ore: 15,
+      redstone_ore: 10,
+      deepslate_redstone_ore: 10,
+      iron_ore: 5,
+      deepslate_iron_ore: 5,
+      copper_ore: 3,
+      deepslate_copper_ore: 3,
+      coal_ore: 1,
+      deepslate_coal_ore: 1,
+    };
+
+    this.valuableOres = new Set(Object.keys(this.oreValues));
   }
 
   async connect() {
-    if (this.isConnecting) {
-      logger.warn("Already attempting to connect...");
-      return;
-    }
+    if (this.isConnecting) return;
 
     this.isConnecting = true;
     logger.info(
       `Connecting to ${config.minecraft.host}:${config.minecraft.port}...`,
     );
-    logger.info(`Using Minecraft version: ${config.minecraft.version}`);
 
     return new Promise((resolve, reject) => {
       try {
@@ -82,14 +88,14 @@ class TerraScoutBot {
           auth: "offline",
         });
 
-        const connectionTimeout = setTimeout(() => {
+        const timeout = setTimeout(() => {
           this.isConnecting = false;
-          reject(new Error("Connection timeout after 30 seconds"));
+          reject(new Error("Connection timeout"));
         }, 30000);
 
         this.bot.once("spawn", () => {
-          clearTimeout(connectionTimeout);
-          logger.success("Bot spawned successfully!");
+          clearTimeout(timeout);
+          logger.success("Bot spawned!");
           this.isConnected = true;
           this.isConnecting = false;
           this.spawnPosition = this.bot.entity.position.clone();
@@ -99,23 +105,15 @@ class TerraScoutBot {
         });
 
         this.bot.once("error", (err) => {
-          clearTimeout(connectionTimeout);
+          clearTimeout(timeout);
           this.isConnecting = false;
-          logger.error("Connection error:", err.message);
           reject(err);
         });
 
         this.bot.once("kicked", (reason) => {
-          clearTimeout(connectionTimeout);
+          clearTimeout(timeout);
           this.isConnecting = false;
-          const reasonStr =
-            typeof reason === "object" ? JSON.stringify(reason) : reason;
-          reject(new Error(`Kicked: ${reasonStr}`));
-        });
-
-        this.bot.once("end", () => {
-          this.isConnected = false;
-          this.isConnecting = false;
+          reject(new Error(`Kicked: ${reason}`));
         });
       } catch (err) {
         this.isConnecting = false;
@@ -127,38 +125,24 @@ class TerraScoutBot {
   loadPlugins() {
     try {
       this.bot.loadPlugin(pathfinder);
-      logger.info("Loaded pathfinder plugin");
-    } catch (err) {
-      logger.warn("Failed to load pathfinder:", err.message);
-    }
-
-    try {
-      this.bot.loadPlugin(collectBlock);
+      const movements = new Movements(this.bot);
+      movements.canDig = true;
+      movements.allow1by1towers = false;
+      this.bot.pathfinder.setMovements(movements);
+      logger.info("Pathfinder loaded");
     } catch (err) {}
-
-    try {
-      this.bot.loadPlugin(autoEat);
-      this.bot.autoEat.options = { priority: "foodPoints", startAt: 14 };
-    } catch (err) {}
-
-    this.setupPathfinder();
   }
 
   setupEventHandlers() {
     this.bot.on("health", () => {
       if (this.bot.health <= 0) {
-        logger.warn("Bot died!");
         this.episodeRunning = false;
       }
     });
 
     this.bot.on("death", () => {
-      logger.warn("Bot died! Episode ending.");
+      logger.warn("Bot died!");
       this.episodeRunning = false;
-    });
-
-    this.bot.on("error", (err) => {
-      logger.error("Bot error:", err.message);
     });
 
     this.bot.on("end", () => {
@@ -166,80 +150,123 @@ class TerraScoutBot {
     });
   }
 
-  setupPathfinder() {
-    if (this.bot.pathfinder) {
-      try {
-        const movements = new Movements(this.bot);
-        movements.canDig = true;
-        movements.allow1by1towers = false;
-        this.bot.pathfinder.setMovements(movements);
-      } catch (err) {}
-    }
-  }
+  // ===== BLOCK UTILITIES =====
 
-  /**
-   * Check if a block is exposed to air (visible/mineable)
-   */
   isBlockExposed(blockPos) {
-    const directions = [
-      { x: 1, y: 0, z: 0 },
-      { x: -1, y: 0, z: 0 },
-      { x: 0, y: 1, z: 0 },
-      { x: 0, y: -1, z: 0 },
-      { x: 0, y: 0, z: 1 },
-      { x: 0, y: 0, z: -1 },
+    const dirs = [
+      [1, 0, 0],
+      [-1, 0, 0],
+      [0, 1, 0],
+      [0, -1, 0],
+      [0, 0, 1],
+      [0, 0, -1],
     ];
-
-    for (const dir of directions) {
-      const adjacentBlock = this.bot.blockAt(
-        blockPos.offset(dir.x, dir.y, dir.z),
-      );
-      if (
-        !adjacentBlock ||
-        adjacentBlock.name === "air" ||
-        adjacentBlock.name === "cave_air"
-      ) {
+    for (const [dx, dy, dz] of dirs) {
+      const adj = this.bot.blockAt(blockPos.offset(dx, dy, dz));
+      if (!adj || adj.name === "air" || adj.name === "cave_air") {
         return true;
       }
     }
     return false;
   }
 
-  /**
-   * Check if digging a block would release lava
-   */
   wouldReleaseLava(blockPos) {
-    const directions = [
-      { x: 1, y: 0, z: 0 },
-      { x: -1, y: 0, z: 0 },
-      { x: 0, y: 1, z: 0 },
-      { x: 0, y: -1, z: 0 },
-      { x: 0, y: 0, z: 1 },
-      { x: 0, y: 0, z: -1 },
+    const dirs = [
+      [1, 0, 0],
+      [-1, 0, 0],
+      [0, 1, 0],
+      [0, -1, 0],
+      [0, 0, 1],
+      [0, 0, -1],
     ];
-
-    for (const dir of directions) {
-      const adjacentBlock = this.bot.blockAt(
-        blockPos.offset(dir.x, dir.y, dir.z),
-      );
-      if (
-        adjacentBlock &&
-        (adjacentBlock.name === "lava" || adjacentBlock.name === "flowing_lava")
-      ) {
+    for (const [dx, dy, dz] of dirs) {
+      const adj = this.bot.blockAt(blockPos.offset(dx, dy, dz));
+      if (adj && (adj.name === "lava" || adj.name === "flowing_lava")) {
         return true;
       }
     }
     return false;
   }
 
-  /**
-   * Find nearest VISIBLE ore block (exposed to air)
-   */
+  isInCave() {
+    try {
+      const pos = this.bot.entity.position;
+      let airCount = 0;
+      let stoneCount = 0;
+
+      // Check surrounding blocks
+      for (let x = -3; x <= 3; x++) {
+        for (let y = -2; y <= 3; y++) {
+          for (let z = -3; z <= 3; z++) {
+            const block = this.bot.blockAt(pos.offset(x, y, z));
+            if (!block || block.name === "air" || block.name === "cave_air") {
+              airCount++;
+            } else if (
+              block.name.includes("stone") ||
+              block.name.includes("deepslate")
+            ) {
+              stoneCount++;
+            }
+          }
+        }
+      }
+
+      // In a cave if lots of air space surrounded by stone
+      return airCount > 50 && stoneCount > 30;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  findCaveEntrance(maxDist = 10) {
+    try {
+      const pos = this.bot.entity.position;
+
+      // Look for large air pockets (caves)
+      for (let x = -maxDist; x <= maxDist; x++) {
+        for (let y = -maxDist; y <= 2; y++) {
+          // Prefer downward caves
+          for (let z = -maxDist; z <= maxDist; z++) {
+            const block = this.bot.blockAt(pos.offset(x, y, z));
+            if (block && (block.name === "air" || block.name === "cave_air")) {
+              // Check if this is a cave (has stone around it)
+              let stoneNearby = 0;
+              for (const [dx, dy, dz] of [
+                [1, 0, 0],
+                [-1, 0, 0],
+                [0, 1, 0],
+                [0, -1, 0],
+                [0, 0, 1],
+                [0, 0, -1],
+              ]) {
+                const adj = this.bot.blockAt(
+                  pos.offset(x + dx, y + dy, z + dz),
+                );
+                if (
+                  adj &&
+                  (adj.name.includes("stone") || adj.name.includes("deepslate"))
+                ) {
+                  stoneNearby++;
+                }
+              }
+              if (stoneNearby >= 3) {
+                return pos.offset(x, y, z);
+              }
+            }
+          }
+        }
+      }
+      return null;
+    } catch (err) {
+      return null;
+    }
+  }
+
   findNearestVisibleOre(maxDistance = 6) {
     try {
       const pos = this.bot.entity.position;
-      let nearestOre = null;
-      let nearestDist = maxDistance;
+      let bestOre = null;
+      let bestScore = -1;
 
       for (let x = -maxDistance; x <= maxDistance; x++) {
         for (let y = -maxDistance; y <= maxDistance; y++) {
@@ -248,36 +275,70 @@ class TerraScoutBot {
             const block = this.bot.blockAt(blockPos);
 
             if (block && this.valuableOres.has(block.name)) {
-              // Only count if exposed to air
               if (this.isBlockExposed(blockPos)) {
                 const dist = Math.sqrt(x * x + y * y + z * z);
-                if (dist < nearestDist) {
-                  nearestDist = dist;
-                  nearestOre = block;
+                const value = this.oreValues[block.name] || 1;
+                const score = value / (dist + 1); // Prioritize close, high-value ores
+
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestOre = block;
                 }
               }
             }
           }
         }
       }
-      return nearestOre;
+      return bestOre;
     } catch (err) {
       return null;
     }
   }
+
+  getVisibleOres() {
+    try {
+      const ores = [];
+      const pos = this.bot.entity.position;
+      const radius = 6;
+
+      for (let x = -radius; x <= radius; x++) {
+        for (let y = -radius; y <= radius; y++) {
+          for (let z = -radius; z <= radius; z++) {
+            const blockPos = pos.offset(x, y, z);
+            const block = this.bot.blockAt(blockPos);
+
+            if (
+              block &&
+              this.valuableOres.has(block.name) &&
+              this.isBlockExposed(blockPos)
+            ) {
+              ores.push({
+                name: block.name,
+                position: blockPos,
+                distance: Math.sqrt(x * x + y * y + z * z),
+                value: this.oreValues[block.name] || 1,
+              });
+            }
+          }
+        }
+      }
+
+      ores.sort((a, b) => b.value - a.value);
+      return ores;
+    } catch (err) {
+      return [];
+    }
+  }
+
+  // ===== OBSERVATIONS =====
 
   getObservation() {
     if (!this.bot || !this.isConnected) return null;
 
     try {
       const pos = this.bot.entity.position;
-      const nearbyBlocks = this.getNearbyBlocks();
       const visibleOres = this.getVisibleOres();
-
-      const dangerNearby = nearbyBlocks.some((b) =>
-        this.dangerousBlocks.has(b.name),
-      );
-      const diamondNearby = visibleOres.some((b) => b.name.includes("diamond"));
+      const inCave = this.isInCave();
 
       return {
         position: { x: pos.x, y: pos.y, z: pos.z },
@@ -287,17 +348,29 @@ class TerraScoutBot {
         pitch: this.bot.entity.pitch || 0,
         onGround: this.bot.entity.onGround,
         inventory: this.getInventoryState(),
-        nearbyBlocks: nearbyBlocks,
-        visibleOres: visibleOres, // Only exposed ores
-        nearbyEntities: [],
+        visibleOres: visibleOres,
+        nearbyBlocks: this.getNearbyBlocks(),
         stepCount: this.stepCount,
         visitedCount: this.visitedBlocks.size,
-        dangerNearby: dangerNearby,
-        diamondNearby: diamondNearby,
-        oresNearby: visibleOres.length,
+        diamondsThisEpisode: this.diamondsThisEpisode,
         minedOresCount: this.minedOres.size,
         isStuck: this.stuckCounter > 10,
-        diamondsThisEpisode: this.diamondsThisEpisode,
+
+        // Cave and mining info
+        inCave: inCave,
+        currentStrategy: this.currentStrategy,
+        miningDirection: this.miningDirection,
+        stripMineLength: this.stripMineLength,
+
+        // Danger detection
+        dangerNearby: this.getNearbyBlocks().some((b) =>
+          this.dangerousBlocks.has(b.name),
+        ),
+        diamondNearby: visibleOres.some((o) => o.name.includes("diamond")),
+
+        // Y-level info
+        atDiamondLevel: pos.y >= -64 && pos.y <= -50,
+        atOptimalY: pos.y >= -59 && pos.y <= -54,
       };
     } catch (err) {
       return null;
@@ -321,8 +394,8 @@ class TerraScoutBot {
   getNearbyBlocks() {
     try {
       const blocks = [];
-      const radius = 4;
       const pos = this.bot.entity.position;
+      const radius = 4;
 
       for (let x = -radius; x <= radius; x++) {
         for (let y = -radius; y <= radius; y++) {
@@ -347,45 +420,7 @@ class TerraScoutBot {
     }
   }
 
-  /**
-   * Get only VISIBLE ores (exposed to air)
-   */
-  getVisibleOres() {
-    try {
-      const ores = [];
-      const radius = 6;
-      const pos = this.bot.entity.position;
-
-      for (let x = -radius; x <= radius; x++) {
-        for (let y = -radius; y <= radius; y++) {
-          for (let z = -radius; z <= radius; z++) {
-            const blockPos = pos.offset(x, y, z);
-            const block = this.bot.blockAt(blockPos);
-
-            if (block && this.valuableOres.has(block.name)) {
-              if (this.isBlockExposed(blockPos)) {
-                ores.push({
-                  name: block.name,
-                  position: {
-                    x: Math.floor(pos.x) + x,
-                    y: Math.floor(pos.y) + y,
-                    z: Math.floor(pos.z) + z,
-                  },
-                  distance: Math.sqrt(x * x + y * y + z * z),
-                });
-              }
-            }
-          }
-        }
-      }
-
-      // Sort by distance
-      ores.sort((a, b) => a.distance - b.distance);
-      return ores;
-    } catch (err) {
-      return [];
-    }
-  }
+  // ===== ACTIONS =====
 
   async executeAction(action) {
     if (!this.bot || !this.isConnected) {
@@ -397,8 +432,8 @@ class TerraScoutBot {
     // Track position
     try {
       const pos = this.bot.entity.position;
-      const blockKey = `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
-      this.visitedBlocks.add(blockKey);
+      const key = `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
+      this.visitedBlocks.add(key);
 
       if (this.lastPosition) {
         const dist = pos.distanceTo(this.lastPosition);
@@ -409,23 +444,21 @@ class TerraScoutBot {
 
     try {
       switch (action.type) {
-        case "move":
-          await this.actionMove(action.direction, action.duration || 2);
+        // Basic movement
+        case "forward":
+          await this.actionMove("forward", 2);
+          break;
+        case "back":
+          await this.actionMove("back", 2);
+          break;
+        case "left":
+          await this.actionMove("left", 2);
+          break;
+        case "right":
+          await this.actionMove("right", 2);
           break;
         case "jump":
           await this.actionJump();
-          break;
-        case "look":
-          await this.actionLook(action.yaw, action.pitch);
-          break;
-        case "dig":
-          await this.actionDig();
-          break;
-        case "dig_down":
-          await this.actionDigDown();
-          break;
-        case "dig_forward":
-          await this.actionDigForward();
           break;
         case "forward_jump":
           await this.actionForwardJump();
@@ -433,23 +466,67 @@ class TerraScoutBot {
         case "sprint_forward":
           await this.actionSprintForward();
           break;
-        case "mine_ore":
-          await this.actionMineNearestOre();
+
+        // Looking
+        case "look_down":
+          await this.actionLook(0, 0.4);
           break;
-        case "tunnel_forward":
-          await this.actionTunnelForward();
+        case "look_up":
+          await this.actionLook(0, -0.4);
+          break;
+        case "look_left":
+          await this.actionLook(-0.5, 0);
+          break;
+        case "look_right":
+          await this.actionLook(0.5, 0);
+          break;
+
+        // Basic mining
+        case "dig_forward":
+          await this.actionDigForward();
+          break;
+        case "dig_down":
+          await this.actionDigDown();
           break;
         case "safe_dig_down":
           await this.actionSafeDigDown();
           break;
+
+        // Advanced mining patterns
+        case "tunnel_forward":
+          await this.actionTunnelForward();
+          break;
         case "strip_mine":
           await this.actionStripMine();
           break;
+        case "branch_mine":
+          await this.actionBranchMine();
+          break;
+        case "mine_ore":
+          await this.actionMineNearestOre();
+          break;
+
+        // Exploration
+        case "explore_cave":
+          await this.actionExploreCave();
+          break;
+        case "descend":
+          await this.actionDescend();
+          break;
+        case "find_cave":
+          await this.actionFindCave();
+          break;
+
+        // Strategy
+        case "switch_direction":
+          await this.actionSwitchDirection();
+          break;
+
         case "noop":
           await this.sleep(50);
           break;
         default:
-          return { success: false, error: `Unknown action: ${action.type}` };
+          return { success: false, error: `Unknown: ${action.type}` };
       }
       return { success: true };
     } catch (err) {
@@ -457,186 +534,17 @@ class TerraScoutBot {
     }
   }
 
-  async actionMove(direction, duration) {
-    this.bot.setControlState(direction, true);
+  // Basic actions
+  async actionMove(dir, duration) {
+    this.bot.setControlState(dir, true);
     await this.sleep(duration * 100);
-    this.bot.setControlState(direction, false);
+    this.bot.setControlState(dir, false);
   }
 
   async actionJump() {
     this.bot.setControlState("jump", true);
     await this.sleep(150);
     this.bot.setControlState("jump", false);
-  }
-
-  async actionLook(yaw, pitch) {
-    await this.bot.look(
-      this.bot.entity.yaw + (yaw || 0),
-      this.bot.entity.pitch + (pitch || 0),
-      false,
-    );
-  }
-
-  async actionDig() {
-    try {
-      const target = this.bot.blockAtCursor(4);
-      if (target && target.name !== "air" && target.name !== "bedrock") {
-        // Check for lava behind
-        if (this.wouldReleaseLava(target.position)) {
-          logger.warn("Lava behind block! Not digging.");
-          return;
-        }
-        await this.bot.dig(target);
-        await this.checkMinedOre(target);
-      }
-    } catch (err) {}
-  }
-
-  async actionDigDown() {
-    try {
-      const pos = this.bot.entity.position;
-      const blockBelow = this.bot.blockAt(pos.offset(0, -1, 0));
-
-      if (
-        !blockBelow ||
-        blockBelow.name === "air" ||
-        blockBelow.name === "bedrock"
-      ) {
-        return;
-      }
-
-      // Check for lava around the block below
-      if (this.wouldReleaseLava(blockBelow.position)) {
-        logger.warn("Lava near block below! Not digging.");
-        return;
-      }
-
-      await this.bot.dig(blockBelow);
-      await this.checkMinedOre(blockBelow);
-    } catch (err) {}
-  }
-
-  async actionSafeDigDown() {
-    try {
-      const pos = this.bot.entity.position;
-      const block1 = this.bot.blockAt(pos.offset(0, -1, 0));
-
-      if (!block1 || block1.name === "air" || block1.name === "bedrock") {
-        return;
-      }
-
-      // Check for lava in ANY adjacent block
-      if (this.wouldReleaseLava(block1.position)) {
-        logger.warn("Lava detected! Safe dig aborted.");
-        return;
-      }
-
-      await this.bot.dig(block1);
-      await this.checkMinedOre(block1);
-    } catch (err) {}
-  }
-
-  async actionDigForward() {
-    try {
-      const pos = this.bot.entity.position;
-      const yaw = this.bot.entity.yaw;
-      const dx = -Math.sin(yaw);
-      const dz = Math.cos(yaw);
-
-      const blockInFront = this.bot.blockAt(pos.offset(dx, 0, dz));
-      if (
-        !blockInFront ||
-        blockInFront.name === "air" ||
-        blockInFront.name === "bedrock"
-      ) {
-        return;
-      }
-
-      if (this.wouldReleaseLava(blockInFront.position)) {
-        logger.warn("Lava ahead! Not digging.");
-        return;
-      }
-
-      await this.bot.dig(blockInFront);
-      await this.checkMinedOre(blockInFront);
-    } catch (err) {}
-  }
-
-  async actionTunnelForward() {
-    try {
-      const pos = this.bot.entity.position;
-      const yaw = this.bot.entity.yaw;
-      const dx = -Math.sin(yaw);
-      const dz = Math.cos(yaw);
-
-      // Check both blocks ahead for lava
-      const block1 = this.bot.blockAt(pos.offset(dx, 0, dz));
-      const block2 = this.bot.blockAt(pos.offset(dx, 1, dz));
-
-      if (block1 && this.wouldReleaseLava(block1.position)) {
-        logger.warn("Danger ahead! Stopping tunnel.");
-        return;
-      }
-      if (block2 && this.wouldReleaseLava(block2.position)) {
-        logger.warn("Danger ahead! Stopping tunnel.");
-        return;
-      }
-
-      // Dig lower block
-      if (block1 && block1.name !== "air" && block1.name !== "bedrock") {
-        await this.bot.dig(block1);
-        await this.checkMinedOre(block1);
-      }
-
-      // Dig upper block
-      if (block2 && block2.name !== "air" && block2.name !== "bedrock") {
-        await this.bot.dig(block2);
-        await this.checkMinedOre(block2);
-      }
-
-      // Move forward
-      this.bot.setControlState("forward", true);
-      await this.sleep(200);
-      this.bot.setControlState("forward", false);
-    } catch (err) {}
-  }
-
-  async actionStripMine() {
-    // Classic strip mining pattern at current Y level
-    try {
-      // Dig 3 blocks forward in a 2-high tunnel
-      for (let i = 0; i < 3; i++) {
-        await this.actionTunnelForward();
-        await this.sleep(100);
-      }
-    } catch (err) {}
-  }
-
-  async actionMineNearestOre() {
-    try {
-      const ore = this.findNearestVisibleOre(5);
-      if (ore) {
-        const dist = ore.position.distanceTo(this.bot.entity.position);
-        logger.info(`Found visible ${ore.name} at distance ${dist.toFixed(1)}`);
-
-        if (dist <= 4) {
-          // Check for lava
-          if (this.wouldReleaseLava(ore.position)) {
-            logger.warn("Lava near ore! Not mining.");
-            return;
-          }
-
-          await this.bot.dig(ore);
-          await this.checkMinedOre(ore);
-        } else {
-          // Look at and move towards ore
-          await this.bot.lookAt(ore.position);
-          this.bot.setControlState("forward", true);
-          await this.sleep(300);
-          this.bot.setControlState("forward", false);
-        }
-      }
-    } catch (err) {}
   }
 
   async actionForwardJump() {
@@ -655,6 +563,336 @@ class TerraScoutBot {
     this.bot.setControlState("sprint", false);
   }
 
+  async actionLook(yaw, pitch) {
+    await this.bot.look(
+      this.bot.entity.yaw + yaw,
+      this.bot.entity.pitch + pitch,
+      false,
+    );
+  }
+
+  // Mining actions
+  async actionDigForward() {
+    try {
+      const pos = this.bot.entity.position;
+      const yaw = this.bot.entity.yaw;
+      const dx = -Math.sin(yaw);
+      const dz = Math.cos(yaw);
+
+      const block = this.bot.blockAt(pos.offset(dx, 0, dz));
+      if (block && block.name !== "air" && block.name !== "bedrock") {
+        if (this.wouldReleaseLava(block.position)) {
+          logger.warn("Lava ahead!");
+          return;
+        }
+        await this.bot.dig(block);
+        await this.checkMinedOre(block);
+      }
+    } catch (err) {}
+  }
+
+  async actionDigDown() {
+    try {
+      const pos = this.bot.entity.position;
+      const block = this.bot.blockAt(pos.offset(0, -1, 0));
+      if (block && block.name !== "air" && block.name !== "bedrock") {
+        await this.bot.dig(block);
+        await this.checkMinedOre(block);
+      }
+    } catch (err) {}
+  }
+
+  async actionSafeDigDown() {
+    try {
+      const pos = this.bot.entity.position;
+      const block = this.bot.blockAt(pos.offset(0, -1, 0));
+
+      if (!block || block.name === "air" || block.name === "bedrock") return;
+      if (this.wouldReleaseLava(block.position)) {
+        logger.warn("Lava detected! Not digging down.");
+        return;
+      }
+
+      await this.bot.dig(block);
+      await this.checkMinedOre(block);
+    } catch (err) {}
+  }
+
+  /**
+   * Tunnel forward - dig 2-high passage with lava check
+   */
+  async actionTunnelForward() {
+    try {
+      const pos = this.bot.entity.position;
+      const yaw = this.bot.entity.yaw;
+      const dx = -Math.sin(yaw);
+      const dz = Math.cos(yaw);
+
+      const block1 = this.bot.blockAt(pos.offset(dx, 0, dz));
+      const block2 = this.bot.blockAt(pos.offset(dx, 1, dz));
+
+      // Check for lava
+      if (
+        (block1 && this.wouldReleaseLava(block1.position)) ||
+        (block2 && this.wouldReleaseLava(block2.position))
+      ) {
+        logger.warn("Danger ahead! Stopping.");
+        return;
+      }
+
+      // Dig lower
+      if (block1 && block1.name !== "air" && block1.name !== "bedrock") {
+        await this.bot.dig(block1);
+        await this.checkMinedOre(block1);
+      }
+
+      // Dig upper
+      if (block2 && block2.name !== "air" && block2.name !== "bedrock") {
+        await this.bot.dig(block2);
+        await this.checkMinedOre(block2);
+      }
+
+      // Move forward
+      this.bot.setControlState("forward", true);
+      await this.sleep(200);
+      this.bot.setControlState("forward", false);
+
+      this.stripMineLength++;
+    } catch (err) {}
+  }
+
+  /**
+   * Strip Mining Pattern - straight tunnel with ore checking
+   * Best at Y=-59 for diamonds
+   */
+  async actionStripMine() {
+    try {
+      this.currentStrategy = "strip_mine";
+
+      // Dig a 2-high tunnel forward
+      for (let i = 0; i < 3; i++) {
+        await this.actionTunnelForward();
+
+        // Check sides for ores every block
+        const visibleOres = this.getVisibleOres();
+        if (visibleOres.length > 0) {
+          // Prioritize high-value ores
+          const bestOre = visibleOres[0];
+          if (bestOre.value >= 10) {
+            // Iron or better
+            await this.actionMineNearestOre();
+          }
+        }
+
+        await this.sleep(50);
+      }
+    } catch (err) {}
+  }
+
+  /**
+   * Branch Mining Pattern - main tunnel with side branches
+   * Optimal: branches every 3 blocks
+   */
+  async actionBranchMine() {
+    try {
+      this.currentStrategy = "strip_mine";
+      const pos = this.bot.entity.position;
+
+      // Main tunnel
+      await this.actionTunnelForward();
+      await this.actionTunnelForward();
+      await this.actionTunnelForward();
+
+      // Every 3 blocks, make a side branch
+      if (this.stripMineLength % 3 === 0) {
+        // Turn and dig branch
+        const originalYaw = this.bot.entity.yaw;
+
+        // Left branch
+        await this.bot.look(originalYaw - Math.PI / 2, 0, false);
+        await this.sleep(100);
+        for (let i = 0; i < 4; i++) {
+          await this.actionTunnelForward();
+        }
+
+        // Return
+        await this.bot.look(originalYaw + Math.PI, 0, false);
+        await this.sleep(100);
+        for (let i = 0; i < 4; i++) {
+          this.bot.setControlState("forward", true);
+          await this.sleep(100);
+        }
+        this.bot.setControlState("forward", false);
+
+        // Right branch
+        await this.bot.look(originalYaw + Math.PI / 2, 0, false);
+        await this.sleep(100);
+        for (let i = 0; i < 4; i++) {
+          await this.actionTunnelForward();
+        }
+
+        // Return to main tunnel
+        await this.bot.look(originalYaw + Math.PI, 0, false);
+        await this.sleep(100);
+        for (let i = 0; i < 4; i++) {
+          this.bot.setControlState("forward", true);
+          await this.sleep(100);
+        }
+        this.bot.setControlState("forward", false);
+
+        // Face original direction
+        await this.bot.look(originalYaw, 0, false);
+        this.branchCount++;
+      }
+    } catch (err) {}
+  }
+
+  async actionMineNearestOre() {
+    try {
+      const ore = this.findNearestVisibleOre(5);
+      if (ore) {
+        const dist = ore.position.distanceTo(this.bot.entity.position);
+        logger.info(`Found visible ${ore.name} at ${dist.toFixed(1)}`);
+
+        if (dist <= 4.5) {
+          if (this.wouldReleaseLava(ore.position)) {
+            logger.warn("Lava near ore!");
+            return;
+          }
+          await this.bot.lookAt(ore.position);
+          await this.sleep(100);
+          await this.bot.dig(ore);
+          await this.checkMinedOre(ore);
+        } else {
+          await this.bot.lookAt(ore.position);
+          this.bot.setControlState("forward", true);
+          await this.sleep(300);
+          this.bot.setControlState("forward", false);
+        }
+      }
+    } catch (err) {}
+  }
+
+  /**
+   * Descend to diamond level safely
+   */
+  async actionDescend() {
+    try {
+      const pos = this.bot.entity.position;
+      this.currentStrategy = "descend";
+
+      // If at diamond level, switch to strip mining
+      if (pos.y <= -50) {
+        this.currentStrategy = "strip_mine";
+        await this.actionStripMine();
+        return;
+      }
+
+      // Staircase pattern down
+      const yaw = this.bot.entity.yaw;
+      const dx = -Math.sin(yaw);
+      const dz = Math.cos(yaw);
+
+      // Dig step down
+      const blockAhead = this.bot.blockAt(pos.offset(dx, 0, dz));
+      const blockBelow = this.bot.blockAt(pos.offset(dx, -1, dz));
+
+      if (blockBelow && this.wouldReleaseLava(blockBelow.position)) {
+        // Turn and try different direction
+        await this.actionSwitchDirection();
+        return;
+      }
+
+      if (blockAhead && blockAhead.name !== "air") {
+        await this.bot.dig(blockAhead);
+      }
+      if (
+        blockBelow &&
+        blockBelow.name !== "air" &&
+        blockBelow.name !== "bedrock"
+      ) {
+        await this.bot.dig(blockBelow);
+      }
+
+      // Move forward and down
+      this.bot.setControlState("forward", true);
+      await this.sleep(300);
+      this.bot.setControlState("forward", false);
+    } catch (err) {}
+  }
+
+  /**
+   * Find and enter a cave
+   */
+  async actionFindCave() {
+    try {
+      const cave = this.findCaveEntrance(12);
+      if (cave) {
+        logger.info(
+          `Found cave entrance at ${cave.x.toFixed(0)}, ${cave.y.toFixed(0)}, ${cave.z.toFixed(0)}`,
+        );
+        this.caveEntrancePos = cave;
+        await this.bot.lookAt(cave);
+        this.bot.setControlState("forward", true);
+        await this.sleep(500);
+        this.bot.setControlState("forward", false);
+      } else {
+        // No cave, keep descending
+        await this.actionDescend();
+      }
+    } catch (err) {}
+  }
+
+  /**
+   * Explore cave system
+   */
+  async actionExploreCave() {
+    try {
+      this.currentStrategy = "explore_cave";
+      this.inCave = this.isInCave();
+
+      if (!this.inCave) {
+        // Not in cave, try to find one
+        await this.actionFindCave();
+        return;
+      }
+
+      // In cave - look for ores first
+      const ores = this.getVisibleOres();
+      if (ores.length > 0) {
+        await this.actionMineNearestOre();
+        return;
+      }
+
+      // Explore cave - move towards air spaces while checking for ores
+      const pos = this.bot.entity.position;
+
+      // Prefer going deeper
+      const downBlock = this.bot.blockAt(pos.offset(0, -1, 0));
+      if (
+        !downBlock ||
+        downBlock.name === "air" ||
+        downBlock.name === "cave_air"
+      ) {
+        // Can go down
+        await this.actionMove("forward", 1);
+      } else {
+        // Follow the cave
+        await this.actionMove("forward", 2);
+      }
+
+      // Look around for ores
+      await this.actionLook(0.3, 0);
+    } catch (err) {}
+  }
+
+  async actionSwitchDirection() {
+    this.miningDirection = (this.miningDirection + 1) % 4;
+    const angles = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+    await this.bot.look(angles[this.miningDirection], 0, false);
+    this.stripMineLength = 0;
+  }
+
   async checkMinedOre(block) {
     if (this.valuableOres.has(block.name)) {
       const key = `${block.position.x},${block.position.y},${block.position.z}`;
@@ -662,7 +900,6 @@ class TerraScoutBot {
         this.minedOres.add(key);
         logger.success(`Mined ${block.name}!`);
 
-        // Track diamonds specifically
         if (block.name.includes("diamond")) {
           this.diamondsThisEpisode++;
           logger.success("💎 DIAMOND ORE MINED! 💎");
@@ -671,51 +908,69 @@ class TerraScoutBot {
     }
   }
 
+  // ===== REWARDS =====
+
   calculateReward() {
     if (!this.bot || !this.isConnected) return 0;
 
-    let reward = -0.001; // Step penalty
+    let reward = -0.001;
 
     try {
-      // Check for DIAMONDS MINED THIS EPISODE (not in inventory from before)
+      // Diamond mined this episode!
       if (this.diamondsThisEpisode > 0) {
         reward += 1000;
         this.episodeRunning = false;
-        logger.success("💎 EPISODE SUCCESS: Diamond obtained! 💎");
+        logger.success("💎 SUCCESS! Diamond obtained! 💎");
+        return reward;
       }
 
-      const y = this.bot.entity.position.y;
+      const pos = this.bot.entity.position;
+      const y = pos.y;
 
       // Y-level rewards
-      if (y < 16) {
+      if (y <= -50 && y >= -64) {
+        reward += 0.05; // At diamond level
+        if (y >= -59 && y <= -54) {
+          reward += 0.1; // Optimal Y
+        }
+      } else if (y < 16) {
         reward += (0.01 * (16 - y)) / 80;
       }
 
-      // Exploration
-      const pos = this.bot.entity.position;
-      const blockKey = `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
-      if (!this.visitedBlocks.has(blockKey)) {
-        reward += 0.01;
+      // Cave exploration bonus
+      if (this.isInCave() && y <= 0) {
+        reward += 0.02;
       }
 
       // Visible ore rewards
-      const visibleOres = this.getVisibleOres();
-      for (const ore of visibleOres) {
-        if (ore.name.includes("diamond")) reward += 5; // Diamond visible
+      const ores = this.getVisibleOres();
+      for (const ore of ores) {
+        if (ore.name.includes("diamond")) {
+          reward += 10;
+        } else if (ore.value >= 10) {
+          reward += 1;
+        }
       }
 
-      // Stuck penalty
-      if (this.stuckCounter > 20) reward -= 0.1;
+      // Exploration
+      const key = `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
+      if (!this.visitedBlocks.has(key)) {
+        reward += 0.02;
+      }
 
-      // Death
+      // Strip mining at correct level
+      if (this.currentStrategy === "strip_mine" && y >= -60 && y <= -50) {
+        reward += 0.01;
+      }
+
+      // Penalties
+      if (this.stuckCounter > 20) reward -= 0.2;
       if (this.bot.health <= 0) {
         reward -= 100;
         this.episodeRunning = false;
       }
-
-      // Damage penalty
       if (this.bot.health < 20) {
-        reward -= (20 - this.bot.health) * 0.1;
+        reward -= (20 - this.bot.health) * 0.05;
       }
     } catch (err) {}
 
@@ -723,13 +978,11 @@ class TerraScoutBot {
     return reward;
   }
 
-  /**
-   * Reset episode - PROPERLY clears state
-   */
+  // ===== EPISODE =====
+
   async reset() {
     logger.info("Resetting episode...");
 
-    // Reset all tracking
     this.stepCount = 0;
     this.totalReward = 0;
     this.visitedBlocks.clear();
@@ -737,44 +990,38 @@ class TerraScoutBot {
     this.stuckCounter = 0;
     this.lastPosition = null;
     this.episodeRunning = true;
-    this.diamondsThisEpisode = 0; // CRITICAL: Reset diamonds count
+    this.diamondsThisEpisode = 0;
+    this.miningDirection = Math.floor(Math.random() * 4);
+    this.stripMineLength = 0;
+    this.branchCount = 0;
+    this.currentStrategy = "descend";
+    this.inCave = false;
 
     if (this.bot && this.isConnected) {
       try {
-        // Stop all movements
-        this.bot.setControlState("forward", false);
-        this.bot.setControlState("back", false);
-        this.bot.setControlState("left", false);
-        this.bot.setControlState("right", false);
-        this.bot.setControlState("jump", false);
-        this.bot.setControlState("sprint", false);
+        // Stop movement
+        ["forward", "back", "left", "right", "jump", "sprint"].forEach((s) =>
+          this.bot.setControlState(s, false),
+        );
 
-        // Clear inventory
+        // Reset player
         this.bot.chat("/clear");
-        await this.sleep(200);
-
-        // Give iron pickaxe for mining
+        await this.sleep(100);
         this.bot.chat("/give @s iron_pickaxe");
         await this.sleep(100);
 
-        // Teleport to spawn/surface to start fresh
         if (this.spawnPosition) {
+          const sp = this.spawnPosition;
           this.bot.chat(
-            `/tp @s ${Math.floor(this.spawnPosition.x)} ${Math.floor(this.spawnPosition.y)} ${Math.floor(this.spawnPosition.z)}`,
+            `/tp @s ${Math.floor(sp.x)} ${Math.floor(sp.y)} ${Math.floor(sp.z)}`,
           );
           await this.sleep(200);
         }
 
-        // Heal the bot
-        this.bot.chat("/effect give @s minecraft:instant_health 1 10");
+        this.bot.chat("/effect give @s instant_health 1 10");
+        this.bot.chat("/effect give @s saturation 1 10");
         await this.sleep(100);
-        this.bot.chat("/effect give @s minecraft:saturation 1 10");
-        await this.sleep(100);
-
-        this.startPosition = this.bot.entity.position.clone();
-      } catch (err) {
-        logger.warn("Reset warning:", err.message);
-      }
+      } catch (err) {}
     }
 
     return this.getObservation();
@@ -794,9 +1041,10 @@ class TerraScoutBot {
         stepCount: this.stepCount,
         totalReward: this.totalReward,
         success: result.success,
-        error: result.error,
         minedOres: this.minedOres.size,
         diamondsThisEpisode: this.diamondsThisEpisode,
+        strategy: this.currentStrategy,
+        inCave: this.inCave,
       },
     };
   }

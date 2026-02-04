@@ -113,9 +113,9 @@ python scripts/test_gym_env.py
 | Phase                      | Status         |
 | -------------------------- | -------------- |
 | Phase 0: Foundation        | ✅ Complete    |
-| Phase 1: Environment Setup | 🔄 In Progress |
-| Phase 2: Agent Development | ⬜ Pending     |
-| Phase 3: Training Pipeline | ⬜ Pending     |
+| Phase 1: Environment Setup | ✅ Complete    |
+| Phase 2: Training Pipeline | ✅ Complete    |
+| Phase 3: Diamond Hunting   | 🔄 In Progress |
 | Phase 4: Optimization      | ⬜ Pending     |
 
 ## 🤝 Contributing

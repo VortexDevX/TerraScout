@@ -18,8 +18,8 @@ class RewardCalculator:
         "diamond_found": 1000.0,
         "death": -100.0,
         
-        # Mining rewards
-        "mined_diamond_ore": 100.0,
+        # Mining rewards - INCREASED to encourage actual mining
+        "mined_diamond_ore": 200.0,  # Was 100 - doubled!
         "mined_iron_ore": 5.0,
         "mined_gold_ore": 10.0,
         "mined_redstone_ore": 8.0,
@@ -30,13 +30,14 @@ class RewardCalculator:
         "new_depth_record": 0.5,
         "at_optimal_y": 0.1,
         
-        # Ore visibility
-        "diamond_ore_visible": 20.0,
-        "other_ore_visible": 1.0,
+        # Ore visibility - REDUCED passive rewards, added approach bonus
+        "diamond_ore_visible": 5.0,   # Was 20 - reduced to encourage action
+        "approaching_diamond": 15.0,  # NEW: bonus for moving toward diamond
+        "other_ore_visible": 0.5,     # Was 1.0
         
         # Exploration
         "new_block_visited": 0.02,
-        "horizontal_exploration": 0.05,  # Bonus for exploring at diamond level
+        "horizontal_exploration": 0.05,
         
         # Efficiency
         "step_penalty": -0.001,
@@ -47,7 +48,7 @@ class RewardCalculator:
         "damage_taken": -2.0,
         "low_health": -1.0,
         "danger_proximity": -0.5,
-        "avoided_danger": 0.5,  # Reward for turning away from lava
+        "avoided_danger": 0.5,
     }
     
     def __init__(self):
@@ -67,6 +68,7 @@ class RewardCalculator:
         self.total_reward = 0
         self.step_count = 0
         self.horizontal_blocks_at_diamond = 0
+        self.prev_closest_diamond_dist = float('inf')  # Track diamond approach
     
     def calculate(
         self, 
@@ -131,16 +133,28 @@ class RewardCalculator:
                         breakdown["mined_other"] = self.REWARDS["mined_other_ore"]
         
         # === Y-Level rewards ===
+        # Strong bonus for entering diamond zone (Y <= 16)
         if current_y <= 16 and not self.entered_diamond_zone:
             reward += self.REWARDS["enter_diamond_zone"]
             breakdown["enter_diamond_zone"] = self.REWARDS["enter_diamond_zone"]
             self.entered_diamond_zone = True
         
+        # Progressive depth bonus - encourages going deeper
         if current_y < self.lowest_y:
-            depth_bonus = self.REWARDS["new_depth_record"] * (self.lowest_y - current_y)
-            reward += depth_bonus
+            depth_gain = self.lowest_y - current_y
+            # Stronger bonus when approaching optimal Y (-59)
+            if current_y < 0:
+                depth_bonus = self.REWARDS["new_depth_record"] * depth_gain * 2.0
+            else:
+                depth_bonus = self.REWARDS["new_depth_record"] * depth_gain
+            reward += min(depth_bonus, 10.0)  # Cap at 10 per step
             breakdown["new_depth"] = depth_bonus
             self.lowest_y = current_y
+        
+        # Bonus for being at optimal diamond Y (-59 to -50)
+        if -59 <= current_y <= -50:
+            reward += self.REWARDS["at_optimal_y"] * 2.0
+            breakdown["optimal_y"] = self.REWARDS["at_optimal_y"] * 2.0
         
         # Optimal Y-level bonus (diamond level)
         if -64 <= current_y <= -50:
@@ -160,9 +174,20 @@ class RewardCalculator:
             breakdown["surface_penalty"] = self.REWARDS["surface_penalty"]
         
         # === Ore visibility ===
+        closest_diamond_dist = float('inf')
         for block in nearby_blocks:
             name = block.get("name", "")
             ore_key = f"{name}_{block.get('position', {})}"
+            
+            # Track closest diamond distance
+            if "diamond" in name and "_ore" in name:
+                block_pos = block.get("position", {})
+                dist = np.sqrt(
+                    (block_pos.get("x", 0) - pos["x"])**2 +
+                    (block_pos.get("y", 0) - pos["y"])**2 +
+                    (block_pos.get("z", 0) - pos["z"])**2
+                )
+                closest_diamond_dist = min(closest_diamond_dist, dist)
             
             if "_ore" in name and ore_key not in self.seen_ores:
                 self.seen_ores.add(ore_key)
@@ -173,12 +198,34 @@ class RewardCalculator:
                     reward += self.REWARDS["other_ore_visible"]
                     breakdown["see_ore"] = breakdown.get("see_ore", 0) + self.REWARDS["other_ore_visible"]
         
+        # === Approaching diamond bonus ===
+        if closest_diamond_dist < float('inf') and closest_diamond_dist < self.prev_closest_diamond_dist:
+            approach_bonus = self.REWARDS["approaching_diamond"] * (self.prev_closest_diamond_dist - closest_diamond_dist)
+            reward += min(approach_bonus, 30.0)  # Cap at 30
+            breakdown["approaching_diamond"] = approach_bonus
+        self.prev_closest_diamond_dist = closest_diamond_dist
+        
         # === Exploration ===
         block_pos = (int(pos["x"]), int(pos["y"]), int(pos["z"]))
         if block_pos not in self.visited_positions:
-            reward += self.REWARDS["new_block_visited"]
-            breakdown["exploration"] = self.REWARDS["new_block_visited"]
+            base_exploration = self.REWARDS["new_block_visited"]
+            
+            # 10X EXPLORATION BONUS at optimal diamond depth!
+            if -59 <= current_y <= -45:
+                exploration_reward = base_exploration * 10.0
+                self.horizontal_blocks_at_diamond += 1
+                breakdown["diamond_exploration"] = exploration_reward
+            else:
+                exploration_reward = base_exploration
+                breakdown["exploration"] = exploration_reward
+            
+            reward += exploration_reward
             self.visited_positions.add(block_pos)
+        
+        # === MASSIVE bonus for first time exploring at optimal depth ===
+        if -59 <= current_y <= -50 and self.horizontal_blocks_at_diamond == 0:
+            reward += 50.0  # Big bonus for reaching and starting to mine here
+            breakdown["first_diamond_level"] = 50.0
         
         # === Stuck detection ===
         if self.prev_position is not None:

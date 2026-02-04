@@ -88,32 +88,46 @@ Should output your Java path.
 
 ---
 
-## 🔧 Step 3: Install Visual C++ Build Tools
+## 🎮 Step 3: Setup Minecraft Server
 
-MineRL requires compilation on Windows.
+Terra Scout requires a Minecraft server for the bot to connect to.
 
-### 3.1 Download Build Tools
+### 3.1 Download Server
 
-1. Go to: https://visualstudio.microsoft.com/visual-cpp-build-tools/
-2. Download "Build Tools for Visual Studio 2022"
-3. Run installer
+The `server/` folder is gitignored. Download PaperMC:
 
-### 3.2 Select Components
-
-In the installer, select:
-
-```
-✅ Desktop development with C++
-   ├── ✅ MSVC v143 - VS 2022 C++ x64/x86 build tools
-   ├── ✅ Windows 11 SDK (10.0.22621.0)
-   └── ✅ C++ CMake tools for Windows
+```powershell
+mkdir server
+cd server
+# Download PaperMC from https://papermc.io/downloads/paper
+# Place paper-1.21.x.jar in server folder
 ```
 
-### 3.3 Install and Restart
+### 3.2 Create Start Script
 
-- Click "Install"
-- Wait for completion (~5-10 GB download)
-- Restart your computer
+Create `server/start.ps1`:
+
+```powershell
+java -Xmx2G -Xms2G -jar paper-1.21.4-118.jar nogui
+```
+
+### 3.3 First Run
+
+```powershell
+.\start.ps1
+```
+
+Accept EULA by editing `eula.txt`: `eula=true`
+
+### 3.4 Configure Server
+
+Edit `server.properties`:
+
+```properties
+online-mode=false
+spawn-protection=0
+difficulty=peaceful
+```
 
 ---
 
@@ -194,35 +208,36 @@ CUDA available: True
 CUDA version: 11.8 (or 12.1)
 ```
 
-### 5.3 Install MineRL
+### 5.3 Install Mineflayer Bot
 
 ```powershell
-pip install minerl
+cd bot
+npm install
+cd ..
 ```
 
-This will take several minutes as it:
+This installs the Node.js bot dependencies:
 
-- Downloads Minecraft assets
-- Compiles native extensions
-- Sets up the environment
+- `mineflayer` - Minecraft bot framework
+- `mineflayer-pathfinder` - Navigation
+- `express` - HTTP server for Python bridge
 
 ### 5.4 Install Reinforcement Learning Libraries
 
 ```powershell
-pip install stable-baselines3[extra]
-pip install gymnasium
+pip install stable-baselines3 gymnasium
 ```
 
-### 5.5 Install Utility Libraries
+### 5.5 Install Python Dependencies
 
 ```powershell
-pip install numpy opencv-python pillow pyyaml tqdm matplotlib tensorboard
+pip install numpy rich httpx pyyaml tqdm
 ```
 
-### 5.6 Install Development Libraries
+### 5.6 Install Development Libraries (Optional)
 
 ```powershell
-pip install pytest pytest-cov black isort flake8 mypy
+pip install pytest black isort
 ```
 
 ---

@@ -101,7 +101,8 @@
 | Milestone | Description                              | Phase      |
 | --------- | ---------------------------------------- | ---------- |
 | M0        | Project structure and documentation      | Phase 0 ✅ |
-| M1        | MineRL environment running locally       | Phase 1    |
-| M2        | Basic agent interacting with environment | Phase 2    |
-| M3        | Training pipeline functional             | Phase 3    |
-| M4        | Agent finds diamonds (any efficiency)    |
+| M1        | Mineflayer bot and bridge running        | Phase 1 ✅ |
+| M2        | Training pipeline functional             | Phase 2 ✅ |
+| M3        | Agent reaches diamond level consistently | Phase 3 🔄 |
+| M4        | Agent finds diamonds (any efficiency)    | Phase 4    |
+| M5        | Optimization and performance tuning      | Phase 5    |

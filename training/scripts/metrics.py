@@ -36,16 +36,17 @@ class MetricsTracker:
         in_cave: bool = False,
     ):
         """Log a single episode."""
+        # Ensure all numeric values are native Python types (not numpy)
         self.episode_data.append({
-            "episode": episode,
-            "reward": reward,
-            "length": length,
-            "lowest_y": lowest_y,
-            "diamond_zone": diamond_zone,
-            "diamonds_found": diamonds_found,
-            "ores_mined": ores_mined,
-            "strategy": strategy,
-            "in_cave": in_cave,
+            "episode": int(episode),
+            "reward": float(reward),
+            "length": int(length),
+            "lowest_y": float(lowest_y),
+            "diamond_zone": bool(diamond_zone),
+            "diamonds_found": int(diamonds_found),
+            "ores_mined": int(ores_mined),
+            "strategy": str(strategy),
+            "in_cave": bool(in_cave),
             "timestamp": datetime.now().isoformat(),
         })
     
@@ -56,17 +57,18 @@ class MetricsTracker:
         
         recent = self.episode_data[-last_n:]
         
+        # Convert numpy types to native Python types for JSON serialization
         return {
             "total_episodes": len(self.episode_data),
-            "avg_reward": np.mean([e["reward"] for e in recent]),
-            "avg_length": np.mean([e["length"] for e in recent]),
-            "avg_lowest_y": np.mean([e["lowest_y"] for e in recent]),
-            "diamond_zone_rate": sum(1 for e in recent if e["diamond_zone"]) / len(recent),
-            "diamond_found_rate": sum(1 for e in recent if e["diamonds_found"] > 0) / len(recent),
-            "total_diamonds": sum(e["diamonds_found"] for e in self.episode_data),
-            "total_ores": sum(e["ores_mined"] for e in self.episode_data),
-            "best_reward": max(e["reward"] for e in self.episode_data),
-            "deepest_y": min(e["lowest_y"] for e in self.episode_data),
+            "avg_reward": float(np.mean([e["reward"] for e in recent])),
+            "avg_length": float(np.mean([e["length"] for e in recent])),
+            "avg_lowest_y": float(np.mean([float(e["lowest_y"]) for e in recent])),
+            "diamond_zone_rate": float(sum(1 for e in recent if e["diamond_zone"]) / len(recent)),
+            "diamond_found_rate": float(sum(1 for e in recent if e["diamonds_found"] > 0) / len(recent)),
+            "total_diamonds": int(sum(e["diamonds_found"] for e in self.episode_data)),
+            "total_ores": int(sum(e["ores_mined"] for e in self.episode_data)),
+            "best_reward": float(max(e["reward"] for e in self.episode_data)),
+            "deepest_y": float(min(float(e["lowest_y"]) for e in self.episode_data)),
         }
     
     def print_summary(self, last_n: int = 100):

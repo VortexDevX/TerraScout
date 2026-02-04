@@ -188,6 +188,75 @@ class TerraScoutBot {
     return false;
   }
 
+  /**
+   * Scan for danger in a radius around the bot
+   * Returns: { dangerNearby, lavaDistance, fallRisk, dangerType }
+   */
+  scanForDanger(radius = 3) {
+    try {
+      const pos = this.bot.entity.position;
+      let closestLava = 100;
+      let dangerType = null;
+
+      for (let x = -radius; x <= radius; x++) {
+        for (let y = -radius; y <= radius; y++) {
+          for (let z = -radius; z <= radius; z++) {
+            const block = this.bot.blockAt(pos.offset(x, y, z));
+            if (block && this.dangerousBlocks.has(block.name)) {
+              const dist = Math.sqrt(x * x + y * y + z * z);
+              if (dist < closestLava) {
+                closestLava = dist;
+                dangerType = block.name;
+              }
+            }
+          }
+        }
+      }
+
+      const fallRisk = this.checkForFall();
+
+      return {
+        dangerNearby: closestLava < 4 || fallRisk,
+        lavaDistance: closestLava,
+        fallRisk: fallRisk,
+        dangerType: dangerType,
+      };
+    } catch (err) {
+      return {
+        dangerNearby: false,
+        lavaDistance: 100,
+        fallRisk: false,
+        dangerType: null,
+      };
+    }
+  }
+
+  /**
+   * Check if there's a dangerous fall below the bot
+   */
+  checkForFall() {
+    try {
+      const pos = this.bot.entity.position;
+      let airBelow = 0;
+
+      // Check blocks directly below
+      for (let y = 1; y <= 5; y++) {
+        const block = this.bot.blockAt(pos.offset(0, -y, 0));
+        if (!block || block.name === "air" || block.name === "cave_air") {
+          airBelow++;
+        } else if (block.name === "lava" || block.name === "flowing_lava") {
+          return true; // Lava below is very dangerous
+        } else {
+          break; // Found solid ground
+        }
+      }
+
+      return airBelow >= 4; // 4+ block fall is dangerous
+    } catch (err) {
+      return false;
+    }
+  }
+
   isInCave() {
     try {
       const pos = this.bot.entity.position;
@@ -339,6 +408,7 @@ class TerraScoutBot {
       const pos = this.bot.entity.position;
       const visibleOres = this.getVisibleOres();
       const inCave = this.isInCave();
+      const dangerInfo = this.scanForDanger(4); // Use enhanced danger scanning
 
       return {
         position: { x: pos.x, y: pos.y, z: pos.z },
@@ -362,10 +432,11 @@ class TerraScoutBot {
         miningDirection: this.miningDirection,
         stripMineLength: this.stripMineLength,
 
-        // Danger detection
-        dangerNearby: this.getNearbyBlocks().some((b) =>
-          this.dangerousBlocks.has(b.name),
-        ),
+        // Enhanced danger detection
+        dangerNearby: dangerInfo.dangerNearby,
+        lavaDistance: dangerInfo.lavaDistance,
+        fallRisk: dangerInfo.fallRisk,
+        dangerType: dangerInfo.dangerType,
         diamondNearby: visibleOres.some((o) => o.name.includes("diamond")),
 
         // Y-level info
@@ -504,6 +575,9 @@ class TerraScoutBot {
           break;
         case "mine_ore":
           await this.actionMineNearestOre();
+          break;
+        case "mine_diamond":
+          await this.actionMineDiamond();
           break;
 
         // Exploration
@@ -662,87 +736,64 @@ class TerraScoutBot {
   }
 
   /**
-   * Strip Mining Pattern - straight tunnel with ore checking
+   * Strip Mining Pattern - single step with ore priority
    * Best at Y=-59 for diamonds
    */
   async actionStripMine() {
     try {
       this.currentStrategy = "strip_mine";
 
-      // Dig a 2-high tunnel forward
-      for (let i = 0; i < 3; i++) {
-        await this.actionTunnelForward();
+      // Single tunnel step
+      await this.actionTunnelForward();
+      this.stripMineLength++;
 
-        // Check sides for ores every block
-        const visibleOres = this.getVisibleOres();
-        if (visibleOres.length > 0) {
-          // Prioritize high-value ores
-          const bestOre = visibleOres[0];
-          if (bestOre.value >= 10) {
-            // Iron or better
-            await this.actionMineNearestOre();
-          }
+      // Check for diamond ore first
+      const visibleOres = this.getVisibleOres();
+      if (visibleOres.length > 0) {
+        const bestOre = visibleOres[0];
+        if (bestOre.name.includes("diamond")) {
+          await this.actionMineDiamond();
+        } else if (bestOre.value >= 10) {
+          await this.actionMineNearestOre();
         }
-
-        await this.sleep(50);
       }
     } catch (err) {}
   }
 
   /**
-   * Branch Mining Pattern - main tunnel with side branches
+   * Branch Mining Pattern - simplified to one step per call
    * Optimal: branches every 3 blocks
    */
   async actionBranchMine() {
     try {
       this.currentStrategy = "strip_mine";
-      const pos = this.bot.entity.position;
 
-      // Main tunnel
+      // Single tunnel step
       await this.actionTunnelForward();
-      await this.actionTunnelForward();
-      await this.actionTunnelForward();
+      this.branchCount++;
 
-      // Every 3 blocks, make a side branch
-      if (this.stripMineLength % 3 === 0) {
-        // Turn and dig branch
+      // Every 6 steps, look for side ores (don't dig full branches - too slow)
+      if (this.branchCount % 6 === 0) {
         const originalYaw = this.bot.entity.yaw;
 
-        // Left branch
+        // Quick look left for ores
         await this.bot.look(originalYaw - Math.PI / 2, 0, false);
-        await this.sleep(100);
-        for (let i = 0; i < 4; i++) {
-          await this.actionTunnelForward();
+        await this.sleep(50);
+        const leftOre = this.findNearestVisibleOre(3);
+        if (leftOre && leftOre.name.includes("diamond")) {
+          await this.actionMineDiamond();
         }
 
-        // Return
-        await this.bot.look(originalYaw + Math.PI, 0, false);
-        await this.sleep(100);
-        for (let i = 0; i < 4; i++) {
-          this.bot.setControlState("forward", true);
-          await this.sleep(100);
-        }
-        this.bot.setControlState("forward", false);
-
-        // Right branch
+        // Quick look right for ores
         await this.bot.look(originalYaw + Math.PI / 2, 0, false);
-        await this.sleep(100);
-        for (let i = 0; i < 4; i++) {
-          await this.actionTunnelForward();
+        await this.sleep(50);
+        const rightOre = this.findNearestVisibleOre(3);
+        if (rightOre && rightOre.name.includes("diamond")) {
+          await this.actionMineDiamond();
         }
 
-        // Return to main tunnel
-        await this.bot.look(originalYaw + Math.PI, 0, false);
-        await this.sleep(100);
-        for (let i = 0; i < 4; i++) {
-          this.bot.setControlState("forward", true);
-          await this.sleep(100);
-        }
-        this.bot.setControlState("forward", false);
-
-        // Face original direction
+        // Return to forward
         await this.bot.look(originalYaw, 0, false);
-        this.branchCount++;
       }
     } catch (err) {}
   }
@@ -774,17 +825,80 @@ class TerraScoutBot {
   }
 
   /**
-   * Descend to diamond level safely
+   * Mine diamond ore specifically - ignores other ores
+   */
+  async actionMineDiamond() {
+    try {
+      const pos = this.bot.entity.position;
+      let closestDiamond = null;
+      let closestDist = 100;
+
+      // Find closest diamond ore
+      for (let x = -6; x <= 6; x++) {
+        for (let y = -6; y <= 6; y++) {
+          for (let z = -6; z <= 6; z++) {
+            const blockPos = pos.offset(x, y, z);
+            const block = this.bot.blockAt(blockPos);
+
+            if (
+              block &&
+              (block.name === "diamond_ore" ||
+                block.name === "deepslate_diamond_ore")
+            ) {
+              if (this.isBlockExposed(blockPos)) {
+                const dist = Math.sqrt(x * x + y * y + z * z);
+                if (dist < closestDist) {
+                  closestDist = dist;
+                  closestDiamond = block;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (closestDiamond) {
+        logger.success(`💎 DIAMOND ORE at distance ${closestDist.toFixed(1)}!`);
+
+        if (closestDist <= 4.5) {
+          if (this.wouldReleaseLava(closestDiamond.position)) {
+            logger.warn("Lava near diamond! Mining anyway...");
+          }
+          await this.bot.lookAt(closestDiamond.position);
+          await this.sleep(100);
+          await this.bot.dig(closestDiamond);
+          await this.checkMinedOre(closestDiamond);
+          this.diamondsThisEpisode++;
+          logger.success("💎 DIAMOND MINED!");
+        } else {
+          // Move toward diamond
+          await this.bot.lookAt(closestDiamond.position);
+          this.bot.setControlState("forward", true);
+          await this.sleep(400);
+          this.bot.setControlState("forward", false);
+        }
+      }
+    } catch (err) {}
+  }
+
+  /**
+   * Descend to diamond level safely - optimized for speed
    */
   async actionDescend() {
     try {
       const pos = this.bot.entity.position;
       this.currentStrategy = "descend";
 
-      // If at diamond level, switch to strip mining
+      // If at diamond level (-50 or below), switch to strip mining
       if (pos.y <= -50) {
         this.currentStrategy = "strip_mine";
         await this.actionStripMine();
+        return;
+      }
+
+      // If close to diamond level, start horizontal mining
+      if (pos.y <= -40) {
+        await this.actionTunnelForward();
         return;
       }
 

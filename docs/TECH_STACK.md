@@ -11,23 +11,30 @@
 │                      TERRA SCOUT STACK                      │
 ├─────────────────────────────────────────────────────────────┤
 │  TRAINING PLATFORM                                          │
-│  └── Kaggle (GPU: T4/P100)                                  │
+│  └── Local (GPU: RTX) / Kaggle (T4/P100)                    │
 ├─────────────────────────────────────────────────────────────┤
 │  REINFORCEMENT LEARNING                                     │
-│  ├── Stable-Baselines3 (RL algorithms)                      │
+│  ├── Stable-Baselines3 (PPO algorithm)                      │
 │  └── Gymnasium (Environment API)                            │
 ├─────────────────────────────────────────────────────────────┤
 │  DEEP LEARNING                                              │
-│  ├── PyTorch (Neural networks)                              │
-│  └── TorchVision (Vision utilities)                         │
+│  └── PyTorch (Neural networks)                              │
+├─────────────────────────────────────────────────────────────┤
+│  BRIDGE LAYER (Python ↔ Node.js)                            │
+│  ├── HTTP API (Express.js server)                           │
+│  └── BridgeClient (Python requests)                         │
+├─────────────────────────────────────────────────────────────┤
+│  MINECRAFT BOT (Node.js)                                    │
+│  ├── Mineflayer (Bot framework)                             │
+│  └── mineflayer-pathfinder (Navigation)                     │
 ├─────────────────────────────────────────────────────────────┤
 │  ENVIRONMENT                                                │
-│  ├── MineRL (Minecraft RL environment)                      │
-│  └── Minecraft Java Edition                                 │
+│  ├── Minecraft Java Edition Server                          │
+│  └── PaperMC (Server software)                              │
 ├─────────────────────────────────────────────────────────────┤
 │  LANGUAGE & RUNTIME                                         │
-│  ├── Python 3.10                                            │
-│  └── OpenJDK 8 (Java)                                       │
+│  ├── Python 3.10 (Agent & Training)                         │
+│  └── Node.js 22.x (Bot)                                     │
 ├─────────────────────────────────────────────────────────────┤
 │  DEVELOPMENT TOOLS                                          │
 │  ├── Git / GitHub                                           │
@@ -44,12 +51,11 @@
 
 | Package             | Version | Purpose                  |
 | ------------------- | ------- | ------------------------ |
-| `minerl`            | 1.0.x   | Minecraft RL environment |
 | `gymnasium`         | 0.29.x  | Environment API standard |
-| `stable-baselines3` | 2.x     | RL algorithms (PPO, DQN) |
+| `stable-baselines3` | 2.x     | RL algorithms (PPO)      |
 | `torch`             | 2.x     | Neural network framework |
-| `torchvision`       | 0.x     | Vision utilities         |
 | `numpy`             | 1.24.x  | Numerical computing      |
+| `requests`          | 2.x     | HTTP client for bridge   |
 
 ### Utility Dependencies
 
@@ -61,6 +67,7 @@
 | `tqdm`          | 4.x     | Progress bars          |
 | `tensorboard`   | 2.x     | Training visualization |
 | `matplotlib`    | 3.x     | Plotting               |
+| `rich`          | 13.x    | Console formatting     |
 
 ### Development Dependencies
 
@@ -75,24 +82,36 @@
 
 ---
 
-## ☕ Java Requirements
+## 📦 Node.js Dependencies
 
-| Component | Version   | Notes               |
-| --------- | --------- | ------------------- |
-| OpenJDK   | 8 (1.8.0) | Required by MineRL  |
-| JAVA_HOME | Set       | Must point to JDK 8 |
+### Bot Core
+
+| Package                 | Version | Purpose                    |
+| ----------------------- | ------- | -------------------------- |
+| `mineflayer`            | 4.x     | Minecraft bot framework    |
+| `mineflayer-pathfinder` | 2.x     | Navigation and pathfinding |
+| `express`               | 4.x     | HTTP server for bridge     |
+| `cors`                  | 2.x     | Cross-origin requests      |
+
+### Minecraft Server
+
+| Component | Version | Notes                            |
+| --------- | ------- | -------------------------------- |
+| Java      | 21+     | Required by Minecraft server     |
+| PaperMC   | 1.21.x  | High-performance server software |
 
 ---
 
-## 🎮 MineRL Environment
+## 🎮 Bot Environment
 
-### Supported Environments
+### Custom Gymnasium Environment
 
-| Environment              | Description                   | Use Case         |
-| ------------------------ | ----------------------------- | ---------------- |
-| `MineRLNavigateDense-v0` | Navigation with dense rewards | Initial testing  |
-| `MineRLObtainDiamond-v0` | Full diamond obtaining task   | Main objective   |
-| `MineRLTreechop-v0`      | Tree chopping task            | Simpler baseline |
+Terra Scout uses a custom Gymnasium environment that bridges to the Mineflayer bot:
+
+| Environment     | Description                              |
+| --------------- | ---------------------------------------- |
+| `TerraScout-v0` | Basic environment with bridge connection |
+| `TerraScout-v2` | Enhanced observations and rewards        |
 
 ### Observation Space
 

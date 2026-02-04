@@ -4,7 +4,7 @@
 
 ---
 
-## 📦 Agent Module Components
+## 📦 Agent Module Components (Python)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -14,41 +14,30 @@
 │  src/                                                                       │
 │  ├── __init__.py                                                            │
 │  │                                                                          │
-│  ├── core/                                                                  │
+│  ├── bridge/                     # Python-to-Bot communication              │
 │  │   ├── __init__.py                                                        │
-│  │   ├── agent.py              # Main agent class                           │
-│  │   ├── policy.py             # Policy implementation                      │
-│  │   └── trainer.py            # Training logic                             │
+│  │   ├── client.py               # HTTP client for bot API                  │
+│  │   ├── environment.py          # TerraScoutEnv (Gymnasium)                │
+│  │   ├── observations.py         # Observation processor (35 features)      │
+│  │   ├── rewards.py              # Custom reward calculator                 │
+│  │   └── actions.py              # Action space handling                    │
+│  │                                                                          │
+│  ├── core/                                                                  │
+│  │   └── __init__.py                                                        │
 │  │                                                                          │
 │  ├── models/                                                                │
-│  │   ├── __init__.py                                                        │
-│  │   ├── networks.py           # Neural network architectures               │
-│  │   ├── feature_extractor.py  # CNN for observations                       │
-│  │   └── heads.py              # Policy and value heads                     │
-│  │                                                                          │
-│  ├── environment/                                                           │
-│  │   ├── __init__.py                                                        │
-│  │   ├── wrappers.py           # Environment wrappers                       │
-│  │   ├── observation.py        # Observation processing                     │
-│  │   ├── action.py             # Action space handling                      │
-│  │   └── reward.py             # Custom reward functions                    │
+│  │   └── __init__.py             # (Uses SB3 built-in MLP)                  │
 │  │                                                                          │
 │  └── utils/                                                                 │
 │      ├── __init__.py                                                        │
-│      ├── logger.py             # Logging utilities                          │
-│      ├── config.py             # Configuration handling                     │
-│      ├── checkpoint.py         # Model saving/loading                       │
-│      └── metrics.py            # Metric calculations                        │
+│      └── logger.py               # Logging utilities                        │
 │                                                                             │
 │  configs/                                                                   │
-│  └── default.yaml              # Default configuration                      │
+│  └── default.yaml                # Default configuration                    │
 │                                                                             │
 │  tests/                                                                     │
-│  ├── __init__.py                                                            │
-│  ├── conftest.py               # Test fixtures                              │
-│  ├── test_agent.py                                                          │
-│  ├── test_models.py                                                         │
-│  └── test_environment.py                                                    │
+│  ├── test_bridge.py                                                         │
+│  └── test_gym_env.py                                                        │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -86,6 +75,39 @@
 │  experiments/                  # Experiment tracking                        │
 │  ├── .gitkeep                                                               │
 │  └── [experiment_YYYYMMDD/]                                                 │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📦 Bot Module Components (Node.js)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              bot/                                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  src/                                                                       │
+│  ├── index.js                   # Entry point                               │
+│  ├── server.js                  # Express.js HTTP server                    │
+│  ├── bot.js                     # TerraScoutBot class (1000+ lines)         │
+│  │                                                                          │
+│  ├── actions/                   # Bot action implementations                │
+│  │   ├── movement.js            # Basic movement (forward, back, jump)      │
+│  │   ├── mining.js              # Mining patterns (strip, branch, tunnel)   │
+│  │   └── exploration.js         # Cave finding and exploration              │
+│  │                                                                          │
+│  ├── observers/                 # Observation gathering                     │
+│  │   ├── blocks.js              # Nearby block detection                    │
+│  │   ├── inventory.js           # Inventory state                           │
+│  │   └── environment.js         # Cave/danger detection                     │
+│  │                                                                          │
+│  └── utils/                                                                 │
+│      ├── logger.js              # Colored console logging                   │
+│      └── config.js              # Bot configuration                         │
+│                                                                             │
+│  package.json                   # Dependencies: mineflayer, express, etc.   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```

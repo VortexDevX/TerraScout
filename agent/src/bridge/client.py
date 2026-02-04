@@ -21,7 +21,7 @@ class BridgeClient:
     def __init__(self, host: str = "localhost", port: int = 3000):
         self.base_url = f"http://{host}:{port}"
         self.ws_url = f"ws://{host}:{port}"
-        self.client = httpx.Client(timeout=30.0)
+        self.client = httpx.Client(timeout=10.0)  # Reduced from 30s
         
     def health_check(self) -> bool:
         """Check if bot server is running."""
@@ -42,17 +42,21 @@ class BridgeClient:
             logger.error(f"Failed to get observation: {e}")
             return None
     
-    def step(self, action: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute action and get result."""
-        try:
-            response = self.client.post(
-                f"{self.base_url}/action",
-                json=action
-            )
-            return response.json()
-        except Exception as e:
-            logger.error(f"Failed to execute action: {e}")
-            return {"error": str(e)}
+    def step(self, action: Dict[str, Any], max_retries: int = 3) -> Dict[str, Any]:
+        """Execute action and get result with retry logic."""
+        for attempt in range(max_retries):
+            try:
+                response = self.client.post(
+                    f"{self.base_url}/action",
+                    json=action
+                )
+                return response.json()
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Action attempt {attempt + 1} failed, retrying...")
+                    continue
+                logger.error(f"Failed to execute action after {max_retries} attempts: {e}")
+                return {"error": str(e)}
     
     def reset(self) -> Dict[str, Any]:
         """Reset episode."""

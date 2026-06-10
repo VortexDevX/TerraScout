@@ -12,6 +12,16 @@ export type HostileMob = {
   distance: number;
 };
 
+export type TerrainSample = {
+  position: Position;
+  top_block: string;
+  biome: string;
+  elevation_delta: number;
+  is_water: boolean;
+  is_lava: boolean;
+  is_passable: boolean;
+};
+
 export type Observation = {
   bot_id: string;
   position: Position;
@@ -24,7 +34,10 @@ export type Observation = {
   nearby_lava: boolean;
   nearby_cliff: boolean;
   nearby_deep_water: boolean;
+  feet_block?: string | null;
+  floor_block?: string | null;
   pathfinding_error?: string | null;
+  terrain_samples: TerrainSample[];
 };
 
 export type CommandType = 'idle' | 'explore' | 'flee' | 'move_to' | 'report_state';
@@ -34,6 +47,7 @@ export type ActionCommand = {
   command: CommandType;
   reason: string;
   target?: Position | null;
+  radius?: number | null;
   max_duration_ms: number;
 };
 
@@ -59,4 +73,3 @@ export function envelope<T>(type: string, payload: T): Envelope<T> {
     payload,
   };
 }
-

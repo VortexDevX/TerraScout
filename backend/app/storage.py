@@ -51,16 +51,25 @@ class EventStore:
             )
             return int(cursor.lastrowid)
 
-    def recent(self, limit: int = 25) -> list[dict[str, Any]]:
+    def list_events(self, limit: int = 25, event_type: str | None = None) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 1000))
+        where = ""
+        params: tuple[Any, ...]
+        if event_type:
+            where = "WHERE event_type = ?"
+            params = (event_type, limit)
+        else:
+            params = (limit,)
         with self._lock, self._connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT id, timestamp, event_type, payload_json
                 FROM debug_events
+                {where}
                 ORDER BY id DESC
                 LIMIT ?
                 """,
-                (limit,),
+                params,
             ).fetchall()
         events = [
             {
@@ -74,3 +83,17 @@ class EventStore:
         events.reverse()
         return events
 
+    def recent(self, limit: int = 25) -> list[dict[str, Any]]:
+        return self.list_events(limit=limit)
+
+    def count_by_type(self) -> dict[str, int]:
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT event_type, COUNT(*) AS event_count
+                FROM debug_events
+                GROUP BY event_type
+                ORDER BY event_type
+                """
+            ).fetchall()
+        return {row["event_type"]: int(row["event_count"]) for row in rows}

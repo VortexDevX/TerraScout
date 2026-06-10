@@ -6,10 +6,15 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+*.egg-info/
+dev-smoke.*
+bot-start.*
 node_modules/
 dist/
 build/
 .vite/
 coverage/
 backend/data/
-
+backend/models/
+backend/training_json/
+server/

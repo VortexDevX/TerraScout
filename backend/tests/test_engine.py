@@ -59,3 +59,22 @@ def test_pathfinding_error_idles() -> None:
     assert goal.name == "idle"
     assert command.command == "idle"
 
+
+def test_daytime_surface_light_zero_is_not_dark() -> None:
+    observation = Observation(
+        position=Position(x=0, y=69, z=0),
+        biome="plains",
+        health=20,
+        hunger=20,
+        time_of_day=2000,
+        light_level=0,
+        floor_block="grass_block",
+    )
+
+    state, risk, goal, command = decide(observation)
+
+    assert state.is_dark is False
+    assert risk.score == 0
+    assert goal.name == "explore"
+    assert command.command == "explore"
+    assert command.target is None

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from itertools import count
 
+from app.config import settings
+from app.policy import load_policy
 from app.protocol import (
     ActionCommand,
     CommandType,
@@ -17,6 +19,27 @@ from app.protocol import (
 _command_counter = count(1)
 
 
+def _is_daytime(time_of_day: int) -> bool:
+    return 0 <= time_of_day < 12300
+
+
+def _is_surface_block(block_name: str | None) -> bool:
+    if not block_name:
+        return False
+    return block_name in {
+        "grass_block",
+        "dirt",
+        "coarse_dirt",
+        "sand",
+        "red_sand",
+        "gravel",
+        "stone",
+        "snow_block",
+        "podzol",
+        "mycelium",
+    }
+
+
 def build_world_state(observation: Observation) -> WorldState:
     hazards: list[str] = []
     if observation.nearby_lava:
@@ -29,6 +52,12 @@ def build_world_state(observation: Observation) -> WorldState:
         hazards.append("pathfinding_error")
 
     nearest = min((mob.distance for mob in observation.nearby_hostiles), default=None)
+    policy = load_policy(settings.policy_path)
+    likely_surface_day = (
+        policy.ignore_daylight_darkness
+        and _is_daytime(observation.time_of_day)
+        and _is_surface_block(observation.floor_block)
+    )
     return WorldState(
         bot_id=observation.bot_id,
         position=observation.position,
@@ -36,7 +65,7 @@ def build_world_state(observation: Observation) -> WorldState:
         health=observation.health,
         hunger=observation.hunger,
         is_night=observation.time_of_day >= 13000,
-        is_dark=observation.light_level <= 7,
+        is_dark=observation.light_level <= 7 and not likely_surface_day,
         hostile_count=len(observation.nearby_hostiles),
         nearest_hostile_distance=nearest,
         hazards=hazards,
@@ -72,9 +101,10 @@ def analyze_risk(state: WorldState) -> RiskReport:
 
 
 def select_goal(state: WorldState, risk: RiskReport) -> SelectedGoal:
+    policy = load_policy(settings.policy_path)
     if "pathfinding_error" in state.hazards:
         return SelectedGoal(name=GoalName.idle, utility=1.0, reason="pathfinding failed")
-    if risk.score >= 70 or state.health <= 6:
+    if risk.score >= 70 or state.health <= policy.min_safe_health:
         return SelectedGoal(name=GoalName.flee, utility=0.95, reason="risk too high")
     if risk.score >= 45:
         return SelectedGoal(name=GoalName.survive, utility=0.75, reason="moderate danger")
@@ -85,22 +115,21 @@ def select_goal(state: WorldState, risk: RiskReport) -> SelectedGoal:
 
 def plan_command(state: WorldState, risk: RiskReport, goal: SelectedGoal) -> ActionCommand:
     command_id = f"cmd-{next(_command_counter)}"
+    policy = load_policy(settings.policy_path)
     if goal.name == GoalName.flee:
-        target = Position(x=state.position.x - 12, y=state.position.y, z=state.position.z - 12)
         return ActionCommand(
             command_id=command_id,
             command=CommandType.flee,
             reason=goal.reason,
-            target=target,
+            radius=policy.flee_radius,
             max_duration_ms=4000,
         )
     if goal.name == GoalName.explore:
-        target = Position(x=state.position.x + 8, y=state.position.y, z=state.position.z + 8)
         return ActionCommand(
             command_id=command_id,
             command=CommandType.explore,
             reason=goal.reason,
-            target=target,
+            radius=policy.explore_radius,
             max_duration_ms=5000,
         )
     if goal.name == GoalName.report:
@@ -124,4 +153,3 @@ def decide(observation: Observation) -> tuple[WorldState, RiskReport, SelectedGo
     goal = select_goal(state, risk)
     command = plan_command(state, risk, goal)
     return state, risk, goal, command
-

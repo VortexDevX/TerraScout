@@ -34,6 +34,7 @@ body {
 
 h1,
 h2,
+h3,
 p {
   margin: 0;
 }
@@ -69,9 +70,14 @@ h1 {
   color: #f0b4ac;
 }
 
+.status.subtle {
+  min-height: 32px;
+  background: #191d18;
+}
+
 .metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -106,9 +112,82 @@ h1 {
 
 .details {
   display: grid;
-  grid-template-columns: 0.8fr 1.2fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-top: 12px;
+}
+
+.training-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 0.65fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.terrain-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.75fr 0.65fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.ops-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+button {
+  min-width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #3a4038;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: #242a23;
+  color: #dbe5d8;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: #d36b5d;
+  color: #ffffff;
+}
+
+button span {
+  margin-left: 6px;
+}
+
+input {
+  width: 100%;
+  height: 36px;
+  border: 1px solid #3a4038;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: #151814;
+  color: #e8ece7;
+}
+
+input:focus {
+  border-color: #d36b5d;
+  outline: none;
 }
 
 .panel {
@@ -121,6 +200,95 @@ h1 {
   margin-bottom: 14px;
 }
 
+.panel-head h2 {
+  margin-bottom: 0;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.summary-item {
+  min-height: 76px;
+  border: 1px solid #30372f;
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: #20251f;
+}
+
+.summary-item span,
+.count-list h3 {
+  color: #aab2a7;
+  font-size: 13px;
+}
+
+.summary-item strong {
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.terrain-hero {
+  min-height: 110px;
+  border: 1px solid #30372f;
+  border-radius: 8px;
+  padding: 14px;
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  background: #161a15;
+}
+
+.terrain-hero span,
+.terrain-hero code {
+  color: #aab2a7;
+}
+
+.terrain-hero strong {
+  font-size: 28px;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.terrain-scalar {
+  min-height: 62px;
+  border: 1px solid #30372f;
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #20251f;
+}
+
+.terrain-scalar span {
+  color: #aab2a7;
+}
+
+.terrain-scalar strong {
+  font-size: 20px;
+}
+
+.mini-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.count-list {
+  min-width: 0;
+}
+
+.count-list h3 {
+  margin-bottom: 8px;
+}
+
 .row,
 .logline {
   min-height: 38px;
@@ -129,6 +297,10 @@ h1 {
   justify-content: space-between;
   gap: 12px;
   border-top: 1px solid #30372f;
+}
+
+.row.compact {
+  min-height: 30px;
 }
 
 .row:first-child,
@@ -142,13 +314,133 @@ h1 {
   color: #aab2a7;
 }
 
+.row strong {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.control-grid,
+.manual-form {
+  display: grid;
+  gap: 8px;
+}
+
+.control-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+
+.manual-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+
+.manual-form label {
+  display: grid;
+  gap: 6px;
+  color: #aab2a7;
+  font-size: 13px;
+}
+
 .empty {
   padding-top: 12px;
 }
 
+.empty.small {
+  font-size: 13px;
+}
+
+.examples {
+  display: grid;
+  gap: 8px;
+}
+
+.example {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 1fr 0.8fr 0.8fr 0.7fr;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid #30372f;
+  color: #aab2a7;
+}
+
+.example:first-child {
+  border-top: 0;
+}
+
+.example strong {
+  color: #e8ece7;
+  overflow-wrap: anywhere;
+}
+
+.dna-vector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dna-vector span {
+  min-width: 42px;
+  border: 1px solid #30372f;
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-align: center;
+  background: #20251f;
+  color: #dbe5d8;
+}
+
+.probe-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.probe-cell {
+  aspect-ratio: 1;
+  border: 1px solid #30372f;
+  border-radius: 4px;
+  background: #4a5d3f;
+}
+
+.probe-cell.water {
+  background: #315f7d;
+}
+
+.probe-cell.danger {
+  background: #9e3f32;
+}
+
+.probe-cell.blocked {
+  background: #403b36;
+}
+
+.icon-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.subhead {
+  margin-top: 18px;
+}
+
+.textline {
+  justify-content: flex-start;
+}
+
+.textline strong {
+  text-align: left;
+}
+
 @media (max-width: 860px) {
   .topbar,
-  .details {
+  .details,
+  .terrain-grid,
+  .training-grid,
+  .ops-grid,
+  .mini-columns {
     grid-template-columns: 1fr;
   }
 
@@ -160,6 +452,10 @@ h1 {
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 520px) {
@@ -167,4 +463,3 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
-

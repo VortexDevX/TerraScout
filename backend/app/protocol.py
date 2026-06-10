@@ -25,6 +25,18 @@ class HostileMob(BaseModel):
     distance: float
 
 
+class TerrainSample(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    position: Position
+    top_block: str
+    biome: str = "unknown"
+    elevation_delta: float
+    is_water: bool = False
+    is_lava: bool = False
+    is_passable: bool = True
+
+
 class Observation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -39,7 +51,10 @@ class Observation(BaseModel):
     nearby_lava: bool = False
     nearby_cliff: bool = False
     nearby_deep_water: bool = False
+    feet_block: str | None = None
+    floor_block: str | None = None
     pathfinding_error: str | None = None
+    terrain_samples: list[TerrainSample] = Field(default_factory=list, max_length=64)
 
 
 class WorldState(BaseModel):
@@ -70,6 +85,34 @@ class RiskReport(BaseModel):
 
     score: int = Field(ge=0, le=100)
     sources: list[RiskSource] = Field(default_factory=list)
+
+
+class TerrainFeature(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    score: int = Field(ge=0, le=100)
+    detail: str
+
+
+class TerrainReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_key: str
+    fingerprint: str
+    sample_count: int
+    elevation_range: float
+    ruggedness: float
+    water_ratio: float
+    lava_ratio: float
+    passable_ratio: float
+    path_iq: int = Field(ge=0, le=100)
+    base_score: int = Field(ge=0, le=100)
+    wonder_score: int = Field(ge=0, le=100)
+    personality: str
+    landmark_name: str
+    terrain_vector: list[float]
+    features: list[TerrainFeature] = Field(default_factory=list)
 
 
 class GoalName(str, Enum):
@@ -103,6 +146,7 @@ class ActionCommand(BaseModel):
     command: CommandType
     reason: str
     target: Position | None = None
+    radius: int | None = Field(default=None, ge=1, le=32)
     max_duration_ms: int = Field(default=5000, ge=100)
 
 
@@ -115,15 +159,42 @@ class ExecutionResult(BaseModel):
     position: Position | None = None
 
 
+class TrainingFeedback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rating: Literal["good", "bad"]
+    command_id: str | None = None
+    note: str = Field(default="", max_length=500)
+
+
+class ControlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["auto", "explore", "flee"] = "explore"
+
+
+class MoveToRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: Position
+    max_duration_ms: int = Field(default=8000, ge=500, le=60000)
+
+
 class TelemetrySnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     connection_status: Literal["offline", "bot_connected", "mock_connected"]
+    autonomy_enabled: bool = False
+    mission_mode: Literal["idle", "manual", "auto", "explore", "flee"] = "idle"
+    command_in_flight: ActionCommand | None = None
+    queued_command: ActionCommand | None = None
     observation: Observation | None = None
     world_state: WorldState | None = None
     risk_report: RiskReport | None = None
+    terrain_report: TerrainReport | None = None
     selected_goal: SelectedGoal | None = None
     action_command: ActionCommand | None = None
+    last_execution_result: ExecutionResult | None = None
     recent_events: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -157,4 +228,3 @@ def envelope(message_type: str, payload: BaseModel | dict[str, Any]) -> Envelope
     else:
         body = payload
     return Envelope(type=message_type, payload=body)
-
